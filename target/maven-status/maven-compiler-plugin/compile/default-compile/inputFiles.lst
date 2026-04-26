@@ -8,9 +8,13 @@ E:\AIAgent\hello-agents-java\src\main\java\Memory.java
 E:\AIAgent\hello-agents-java\src\main\java\Message.java
 E:\AIAgent\hello-agents-java\src\main\java\MyLLM.java
 E:\AIAgent\hello-agents-java\src\main\java\MyMain.java
+E:\AIAgent\hello-agents-java\src\main\java\MyPlanAndSolveAgent.java
+E:\AIAgent\hello-agents-java\src\main\java\MyReActAgent.java
+E:\AIAgent\hello-agents-java\src\main\java\MyReflectionAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\MySimpleAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\MySimpleAgentTest.java
 E:\AIAgent\hello-agents-java\src\main\java\PlanAndSolveAgent.java
+E:\AIAgent\hello-agents-java\src\main\java\PlanAndSolveAgentLegacy.java
 E:\AIAgent\hello-agents-java\src\main\java\Planner.java
 E:\AIAgent\hello-agents-java\src\main\java\ReActAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\ReflectionAgent.java
