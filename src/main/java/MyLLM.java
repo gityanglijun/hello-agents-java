@@ -2,6 +2,7 @@ import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 public class MyLLM extends HelloAgentsLLM {
@@ -10,15 +11,20 @@ public class MyLLM extends HelloAgentsLLM {
     public String baseUrl;
     public String provider;
     public Float temperature;
+    public Integer maxTokens;
+    public Integer timeout;
+
     private final Map<String, Object> extraConfig;
 
     private MyLLM(Builder builder) {
-        super(builder.resolvedModel, builder.buildClient());
+        super(builder.model, builder.buildClient(), builder.provider);
         this.extraConfig = builder.extraConfig;
-        this.apiKey = builder.resolvedApiKey;
-        this.baseUrl = builder.resolvedBaseUrl;
-        this.provider = builder.resolvedProvider;
+        this.apiKey = builder.apiKey;
+        this.baseUrl = builder.baseUrl;
+        this.provider = builder.provider;
         this.temperature = builder.temperature;
+        this.maxTokens = builder.maxTokens;
+        this.timeout = builder.timeout;
     }
 
     public static class Builder {
@@ -28,14 +34,9 @@ public class MyLLM extends HelloAgentsLLM {
         private String baseUrl;
         private String provider = "auto";
         private Float temperature = 0.7f;
-        private int timeout = 60;
+        public Integer maxTokens;
+        private Integer timeout = 60;
         private Map<String, Object> extraConfig = new HashMap<>();
-
-        // === 内部解析后的值 ===
-        private String resolvedModel;
-        private String resolvedApiKey;
-        private String resolvedBaseUrl;
-        private String resolvedProvider;
 
         // === Fluent setters ===
 
@@ -69,6 +70,11 @@ public class MyLLM extends HelloAgentsLLM {
             return this;
         }
 
+        public Builder maxTokens(Integer maxTokens){
+            this.maxTokens = maxTokens;
+            return this;
+        }
+
         public Builder putExtra(String key, Object val) {
             this.extraConfig.put(key, val);
             return this;
@@ -89,41 +95,45 @@ public class MyLLM extends HelloAgentsLLM {
         private void resolveConfig() {
             Map<String, String> env = LoadDotenvUtil.loadEnvFile();
 
+            // provider 为 auto 或未手动设置时，自动检测
+            if (provider == null || "auto".equals(provider)) {
+                String detected = HelloAgentsLLM.autoDetectProvider(apiKey, baseUrl);
+                if (!"auto".equals(detected)) {
+                    System.out.println("自动检测到 Provider: " + detected);
+                    provider = detected;
+                }
+            }
+
             if ("modelscope".equals(provider)) {
-                resolvedProvider = "modelscope";
+                // 使用父类的通用凭证解析
+                String[] creds = HelloAgentsLLM.resolveCredentials("modelscope", apiKey, baseUrl);
+                apiKey = creds[0];
+                baseUrl = creds[1];
 
-                // 解析 ModelScope 凭证
-                resolvedApiKey = (apiKey != null && !apiKey.isBlank())
-                        ? apiKey : env.get("MODELSCOPE_API_KEY");
-                resolvedBaseUrl = (baseUrl != null && !baseUrl.isBlank())
-                        ? baseUrl : "https://api-inference.modelscope.cn/v1/";
-
-                if (resolvedApiKey == null || resolvedApiKey.isBlank()) {
+                if (apiKey == null || apiKey.isBlank()) {
                     throw new IllegalArgumentException("ModelScope API key not found. " +
                             "Please set MODELSCOPE_API_KEY environment variable.");
                 }
 
-                resolvedModel = (model != null && !model.isBlank())
+                model = (model != null && !model.isBlank())
                         ? model : env.getOrDefault("LLM_MODEL_ID", "Qwen/Qwen2.5-VL-72B-Instruct");
 
                 System.out.println("正在使用自定义的 ModelScope Provider");
 
             } else {
-                // 非 modelscope：复用父类的默认逻辑
-                resolvedProvider = "auto";
-                resolvedApiKey = (apiKey != null && !apiKey.isBlank())
-                        ? apiKey : env.get("LLM_API_KEY");
-                resolvedBaseUrl = (baseUrl != null && !baseUrl.isBlank())
-                        ? baseUrl : env.get("LLM_BASE_URL");
-                resolvedModel = (model != null && !model.isBlank())
+                // 非 modelscope：复用父类的通用凭证解析
+                String[] creds = HelloAgentsLLM.resolveCredentials(provider, apiKey, baseUrl);
+                apiKey = creds[0];
+                baseUrl = creds[1];
+                model = (model != null && !model.isBlank())
                         ? model : env.get("LLM_MODEL_ID");
             }
         }
 
         private OpenAIClient buildClient() {
             return OpenAIOkHttpClient.builder()
-                    .apiKey(resolvedApiKey)
-                    .baseUrl(resolvedBaseUrl)
+                    .apiKey(apiKey)
+                    .baseUrl(baseUrl)
                     .timeout(Duration.ofSeconds(timeout))
                     .build();
         }

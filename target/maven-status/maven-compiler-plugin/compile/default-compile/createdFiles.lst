@@ -1,3 +1,14 @@
-HelloAgentsLLM.class
+MySimpleAgent$ToolCall.class
 MyLLM.class
+ToolRegistry.class
+Message.class
+MySimpleAgent.class
+SimpleAgent.class
+Config$Builder.class
+HelloAgentsLLM.class
+ToolRegistry$ToolEntry.class
+Config.class
+CalculatorTool.class
+Agent.class
+MySimpleAgentTest.class
 MyLLM$Builder.class
