@@ -14,10 +14,12 @@ Config$Builder.class
 HelloAgentsLLM.class
 ToolParameter.class
 ToolRegistry$ToolEntry.class
+MyCalculatorTool.class
 PlanAndSolveAgent$2.class
 Tool.class
 Config.class
 CalculatorTool.class
+MyCalculatorToolTest.class
 PlanAndSolveAgent$1.class
 MyReActAgentTest.class
 MyPlanAndSolveAgent.class
