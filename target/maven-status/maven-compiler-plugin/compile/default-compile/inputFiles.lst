@@ -9,8 +9,11 @@ E:\AIAgent\hello-agents-java\src\main\java\Message.java
 E:\AIAgent\hello-agents-java\src\main\java\MyLLM.java
 E:\AIAgent\hello-agents-java\src\main\java\MyMain.java
 E:\AIAgent\hello-agents-java\src\main\java\MyPlanAndSolveAgent.java
+E:\AIAgent\hello-agents-java\src\main\java\MyPlanAndSolveAgentTest.java
 E:\AIAgent\hello-agents-java\src\main\java\MyReActAgent.java
+E:\AIAgent\hello-agents-java\src\main\java\MyReActAgentTest.java
 E:\AIAgent\hello-agents-java\src\main\java\MyReflectionAgent.java
+E:\AIAgent\hello-agents-java\src\main\java\MyReflectionAgentTest.java
 E:\AIAgent\hello-agents-java\src\main\java\MySimpleAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\MySimpleAgentTest.java
 E:\AIAgent\hello-agents-java\src\main\java\PlanAndSolveAgent.java
@@ -20,5 +23,7 @@ E:\AIAgent\hello-agents-java\src\main\java\ReActAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\ReflectionAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\SerpApiHttpClient.java
 E:\AIAgent\hello-agents-java\src\main\java\SimpleAgent.java
+E:\AIAgent\hello-agents-java\src\main\java\Tool.java
 E:\AIAgent\hello-agents-java\src\main\java\ToolExecutor.java
+E:\AIAgent\hello-agents-java\src\main\java\ToolParameter.java
 E:\AIAgent\hello-agents-java\src\main\java\ToolRegistry.java
