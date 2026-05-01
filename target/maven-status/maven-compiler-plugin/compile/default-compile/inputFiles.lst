@@ -3,6 +3,8 @@ E:\AIAgent\hello-agents-java\src\main\java\AsyncToolExecutor.java
 E:\AIAgent\hello-agents-java\src\main\java\AsyncToolExecutorTest.java
 E:\AIAgent\hello-agents-java\src\main\java\CalculatorTool.java
 E:\AIAgent\hello-agents-java\src\main\java\Config.java
+E:\AIAgent\hello-agents-java\src\main\java\EpisodicMemory.java
+E:\AIAgent\hello-agents-java\src\main\java\EpisodicMemoryTest.java
 E:\AIAgent\hello-agents-java\src\main\java\Executor.java
 E:\AIAgent\hello-agents-java\src\main\java\HelloAgentsLLM.java
 E:\AIAgent\hello-agents-java\src\main\java\LoadDotenvUtil.java
@@ -25,12 +27,16 @@ E:\AIAgent\hello-agents-java\src\main\java\MyReflectionAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\MyReflectionAgentTest.java
 E:\AIAgent\hello-agents-java\src\main\java\MySimpleAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\MySimpleAgentTest.java
+E:\AIAgent\hello-agents-java\src\main\java\PerceptualMemory.java
+E:\AIAgent\hello-agents-java\src\main\java\PerceptualMemoryTest.java
 E:\AIAgent\hello-agents-java\src\main\java\PlanAndSolveAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\PlanAndSolveAgentLegacy.java
 E:\AIAgent\hello-agents-java\src\main\java\Planner.java
 E:\AIAgent\hello-agents-java\src\main\java\ReActAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\ReflectionAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\SearchTool.java
+E:\AIAgent\hello-agents-java\src\main\java\SemanticMemory.java
+E:\AIAgent\hello-agents-java\src\main\java\SemanticMemoryTest.java
 E:\AIAgent\hello-agents-java\src\main\java\SerpApiHttpClient.java
 E:\AIAgent\hello-agents-java\src\main\java\SimpleAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\TavilyHttpClient.java
@@ -41,3 +47,5 @@ E:\AIAgent\hello-agents-java\src\main\java\ToolChainTest.java
 E:\AIAgent\hello-agents-java\src\main\java\ToolExecutor.java
 E:\AIAgent\hello-agents-java\src\main\java\ToolParameter.java
 E:\AIAgent\hello-agents-java\src\main\java\ToolRegistry.java
+E:\AIAgent\hello-agents-java\src\main\java\WorkingMemory.java
+E:\AIAgent\hello-agents-java\src\main\java\WorkingMemoryTest.java
