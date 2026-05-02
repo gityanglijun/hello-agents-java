@@ -1,13 +1,17 @@
 E:\AIAgent\hello-agents-java\src\main\java\Agent.java
 E:\AIAgent\hello-agents-java\src\main\java\AsyncToolExecutor.java
 E:\AIAgent\hello-agents-java\src\main\java\AsyncToolExecutorTest.java
+E:\AIAgent\hello-agents-java\src\main\java\BailianEmbeddingClient.java
 E:\AIAgent\hello-agents-java\src\main\java\CalculatorTool.java
 E:\AIAgent\hello-agents-java\src\main\java\Config.java
+E:\AIAgent\hello-agents-java\src\main\java\DocumentReader.java
+E:\AIAgent\hello-agents-java\src\main\java\EmbedderProvider.java
 E:\AIAgent\hello-agents-java\src\main\java\EpisodicMemory.java
 E:\AIAgent\hello-agents-java\src\main\java\EpisodicMemoryTest.java
 E:\AIAgent\hello-agents-java\src\main\java\Executor.java
 E:\AIAgent\hello-agents-java\src\main\java\HelloAgentsLLM.java
 E:\AIAgent\hello-agents-java\src\main\java\LoadDotenvUtil.java
+E:\AIAgent\hello-agents-java\src\main\java\MarkdownChunker.java
 E:\AIAgent\hello-agents-java\src\main\java\Memory.java
 E:\AIAgent\hello-agents-java\src\main\java\MemoryManager.java
 E:\AIAgent\hello-agents-java\src\main\java\MemoryTool.java
@@ -32,6 +36,8 @@ E:\AIAgent\hello-agents-java\src\main\java\PerceptualMemoryTest.java
 E:\AIAgent\hello-agents-java\src\main\java\PlanAndSolveAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\PlanAndSolveAgentLegacy.java
 E:\AIAgent\hello-agents-java\src\main\java\Planner.java
+E:\AIAgent\hello-agents-java\src\main\java\RAGTool.java
+E:\AIAgent\hello-agents-java\src\main\java\RAGToolTest.java
 E:\AIAgent\hello-agents-java\src\main\java\ReActAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\ReflectionAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\SearchTool.java
