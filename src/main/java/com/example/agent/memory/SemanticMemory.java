@@ -1,25 +1,26 @@
 package com.example.agent.memory;
+
+import com.example.agent.embedding.EmbedderProvider;
+import com.example.agent.nlp.EntityRelationExtractor;
+import com.example.agent.store.DocumentStore;
+import com.example.agent.store.GraphStore;
+import com.example.agent.store.VectorStore;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import com.example.agent.nlp.EntityRelationExtractor;
-
 /**
- * 语义记忆实现
- *
- * 特点：
- * - 向量 + 知识图谱混合检索
- * - 实体和关系提取
- * - 混合排序：vec_score×0.7 + graph_score×0.3
+ * 语义记忆实现 — 向量 + 知识图谱混合检索。
+ * 嵌入使用 EmbedderProvider 降级链（BGE → LLM API → 百炼 API → TF-IDF）。
+ * 存储使用 VectorStore / GraphStore / DocumentStore。
  */
-public class SemanticMemory {
+public class SemanticMemory implements BaseMemory {
 
-    // ==================== 内部数据类 ====================
+    // ==================== 内部类型（兼容 EntityRelationExtractor） ====================
 
     public static class Entity {
         public final String entityId;
         public final String name;
-        public final String type;       // person, concept, tool, language, etc.
+        public final String type;
 
         public Entity(String entityId, String name, String type) {
             this.entityId = entityId;
@@ -39,10 +40,10 @@ public class SemanticMemory {
 
     public static class Relation {
         public final String relationId;
-        public final String subjectId;   // 主体实体ID
-        public final String predicate;   // 关系类型
-        public final String objectId;    // 客体实体ID
-        public final String memoryId;    // 来源记忆ID
+        public final String subjectId;
+        public final String predicate;
+        public final String objectId;
+        public final String memoryId;
 
         public Relation(String relationId, String subjectId, String predicate,
                         String objectId, String memoryId) {
@@ -56,36 +57,43 @@ public class SemanticMemory {
 
     // ==================== 存储层 ====================
 
-    // 向量存储: memoryId → 向量
-    private final Map<String, float[]> vectorStore = new LinkedHashMap<>();
-
-    // 图存储
-    private final Map<String, Entity> entities = new LinkedHashMap<>();          // entityId → Entity
-    private final List<Relation> relations = new ArrayList<>();
-    private final Map<String, Set<String>> entityToMemories = new HashMap<>();  // entityId → memoryIds
-    private final Map<String, Set<String>> memoryToEntities = new HashMap<>();  // memoryId → entityIds
-
-    // 记忆内容（用于返回检索结果）
-    private final Map<String, MemoryManager.MemoryItem> memoryStore = new LinkedHashMap<>();
-
-    // 嵌入器
-    private final EpisodicMemory.TextEmbedder embedder;
-
-    // 实体/关系提取器
+    private final VectorStore vectorStore;
+    private final GraphStore graphStore;
+    private final DocumentStore docStore;
+    private final boolean ownDocStore;
+    private final EmbedderProvider embedder;
     private final EntityRelationExtractor extractor = new EntityRelationExtractor();
 
     // ==================== 构造 ====================
 
+    /** 使用默认嵌入后端（自动降级链 BGE → LLM API → 百炼 API → TF-IDF） */
     public SemanticMemory() {
-        this.embedder = new EpisodicMemory.TextEmbedder(256);
+        this(new EmbedderProvider(256), null, null, null);
     }
 
+    /** @param vectorDim TF-IDF 降级时的向量维度（BGE/百炼可用时自动使用更高维度） */
     public SemanticMemory(int vectorDim) {
-        this.embedder = new EpisodicMemory.TextEmbedder(vectorDim);
+        this(new EmbedderProvider(vectorDim), null, null, null);
     }
 
-    public SemanticMemory(EpisodicMemory.TextEmbedder embedder) {
-        this.embedder = embedder != null ? embedder : new EpisodicMemory.TextEmbedder(256);
+    /** 使用自定义 EmbedderProvider */
+    public SemanticMemory(EmbedderProvider embedder) {
+        this(embedder, null, null, null);
+    }
+
+    /** 使用 MemoryConfig 统一配置 */
+    public SemanticMemory(MemoryConfig config) {
+        this(new EmbedderProvider(config.embedderFallbackDim), null, null, null);
+    }
+
+    /** 使用外部存储后端（持久化）。传 null 则使用默认内存存储 */
+    public SemanticMemory(EmbedderProvider embedder,
+                          DocumentStore docStore, VectorStore vectorStore, GraphStore graphStore) {
+        this.embedder = embedder != null ? embedder : new EmbedderProvider(256);
+        this.docStore = docStore != null ? docStore : new DocumentStore(":memory:");
+        this.ownDocStore = docStore == null;
+        this.vectorStore = vectorStore != null ? vectorStore : new VectorStore(this.embedder.getDimension());
+        this.graphStore = graphStore != null ? graphStore : new GraphStore();
     }
 
     // ==================== 添加 ====================
@@ -94,31 +102,19 @@ public class SemanticMemory {
         // 1. 生成文本嵌入
         embedder.register(item.content);
         float[] embedding = embedder.encode(item.content);
-        vectorStore.put(item.id, embedding);
+        vectorStore.add(item.id, embedding);
 
         // 2. 提取实体和关系
-        List<Entity> extractedEntities = extractEntities(item.content);
-        List<Relation> extractedRelations = extractRelations(item.content, extractedEntities, item.id);
+        List<GraphStore.EntityData> extractedEntities = extractAndStoreEntities(item.content);
+        extractAndStoreRelations(item.content, extractedEntities, item.id);
 
-        // 3. 存储到图
-        memoryToEntities.put(item.id, new HashSet<>());
-        for (Entity entity : extractedEntities) {
-            // 实体去重（同名同类型复用）
-            Entity existing = findEntityByName(entity.name, entity.type);
-            if (existing == null) {
-                entities.put(entity.entityId, entity);
-                existing = entity;
-            }
-            entityToMemories.computeIfAbsent(existing.entityId, k -> new HashSet<>()).add(item.id);
-            memoryToEntities.get(item.id).add(existing.entityId);
-        }
-
-        for (Relation rel : extractedRelations) {
-            relations.add(rel);
+        // 3. 关联记忆到实体
+        for (GraphStore.EntityData entity : extractedEntities) {
+            graphStore.linkEntityToMemory(entity.id, item.id);
         }
 
         // 4. 缓存记忆
-        memoryStore.put(item.id, item);
+        docStore.insertMemoryItem(item);
 
         return item.id;
     }
@@ -146,43 +142,36 @@ public class SemanticMemory {
 
     private List<VectorHit> vectorSearch(String query, int topK, String userId) {
         float[] queryVec = embedder.encode(query);
-        List<VectorHit> hits = new ArrayList<>();
+        List<VectorStore.VectorHit> hits = vectorStore.search(queryVec, topK);
 
-        for (Map.Entry<String, float[]> entry : vectorStore.entrySet()) {
+        List<VectorHit> results = new ArrayList<>();
+        for (VectorStore.VectorHit hit : hits) {
             // userId 过滤
             if (userId != null) {
-                MemoryManager.MemoryItem item = memoryStore.get(entry.getKey());
+                MemoryManager.MemoryItem item = docStore.getMemoryItem(hit.id);
                 if (item == null || !userId.equals(item.metadata.get("user_id"))) continue;
             }
-
-            double sim = cosine(queryVec, entry.getValue());
-            if (sim > 0) {
-                hits.add(new VectorHit(entry.getKey(), sim));
-            }
+            results.add(new VectorHit(hit.id, hit.score));
         }
-
-        hits.sort((a, b) -> Double.compare(b.score, a.score));
-        return hits.subList(0, Math.min(topK, hits.size()));
+        return results;
     }
 
     // ==================== 图检索 ====================
 
     private List<GraphHit> graphSearch(String query, int topK, String userId) {
-        // 从查询中提取实体作为图查询的锚点
         List<Entity> queryEntities = extractEntities(query);
         if (queryEntities.isEmpty()) return Collections.emptyList();
 
-        // 找到包含这些实体的记忆
         Map<String, GraphHit> memoryScores = new LinkedHashMap<>();
         for (Entity qe : queryEntities) {
-            Entity match = findEntityByName(qe.name, qe.type);
+            GraphStore.EntityData match = graphStore.findEntityByName(qe.name, qe.type);
             if (match == null) continue;
 
             // 直接关联：记忆包含该实体
-            Set<String> linkedMemories = entityToMemories.getOrDefault(match.entityId, Collections.emptySet());
+            Set<String> linkedMemories = graphStore.getLinkedMemories(match.id);
             for (String memId : linkedMemories) {
                 if (userId != null) {
-                    MemoryManager.MemoryItem item = memoryStore.get(memId);
+                    MemoryManager.MemoryItem item = docStore.getMemoryItem(memId);
                     if (item == null || !userId.equals(item.metadata.get("user_id"))) continue;
                 }
                 memoryScores.merge(memId, new GraphHit(memId, 1.0, 1), (a, b) -> {
@@ -192,33 +181,26 @@ public class SemanticMemory {
                 });
             }
 
-            // 一跳邻居：通过关系找到关联实体，再找关联记忆
-            for (Relation rel : relations) {
-                String neighborEntityId = null;
-                if (rel.subjectId.equals(match.entityId)) neighborEntityId = rel.objectId;
-                else if (rel.objectId.equals(match.entityId)) neighborEntityId = rel.subjectId;
-                if (neighborEntityId == null) continue;
-
-                Set<String> neighborMemories = entityToMemories.getOrDefault(neighborEntityId, Collections.emptySet());
-                for (String memId : neighborMemories) {
-                    if (linkedMemories.contains(memId)) continue; // 已计入直接关联
-                    if (userId != null) {
-                        MemoryManager.MemoryItem item = memoryStore.get(memId);
-                        if (item == null || !userId.equals(item.metadata.get("user_id"))) continue;
-                    }
-                    memoryScores.merge(memId, new GraphHit(memId, 0.5, 0), (a, b) -> {
-                        a.score = Math.max(a.score, 0.5); // 一跳取 0.5
-                        return a;
-                    });
+            // 一跳邻居
+            Set<String> neighborMemories = graphStore.getNeighborMemories(match.id);
+            for (String memId : neighborMemories) {
+                if (linkedMemories.contains(memId)) continue;
+                if (userId != null) {
+                    MemoryManager.MemoryItem item = docStore.getMemoryItem(memId);
+                    if (item == null || !userId.equals(item.metadata.get("user_id"))) continue;
                 }
+                memoryScores.merge(memId, new GraphHit(memId, 0.5, 0), (a, b) -> {
+                    a.score = Math.max(a.score, 0.5);
+                    return a;
+                });
             }
         }
 
         // 归一化：Jaccard 相似度 × 基准分
         for (GraphHit hit : memoryScores.values()) {
-            Set<String> memEntities = memoryToEntities.getOrDefault(hit.memoryId, Collections.emptySet());
-            double jaccard = queryEntities.size() + memEntities.size() - hit.sharedEntities;
-            hit.score = hit.score * (hit.sharedEntities / Math.max(jaccard, 1.0));
+            Set<String> memEntities = graphStore.getMemoryEntities(hit.memoryId);
+            double jaccardDenom = queryEntities.size() + memEntities.size() - hit.sharedEntities;
+            hit.score = hit.score * (hit.sharedEntities / Math.max(jaccardDenom, 1.0));
         }
 
         List<GraphHit> sorted = new ArrayList<>(memoryScores.values());
@@ -233,7 +215,6 @@ public class SemanticMemory {
 
         Map<String, CombinedScore> combined = new LinkedHashMap<>();
 
-        // 合并向量结果
         for (VectorHit vh : vectorResults) {
             CombinedScore cs = new CombinedScore();
             cs.memoryId = vh.memoryId;
@@ -241,7 +222,6 @@ public class SemanticMemory {
             combined.put(vh.memoryId, cs);
         }
 
-        // 合并图结果
         for (GraphHit gh : graphResults) {
             CombinedScore cs = combined.get(gh.memoryId);
             if (cs != null) {
@@ -254,25 +234,23 @@ public class SemanticMemory {
             }
         }
 
-        // 计算最终分数: (vec×0.7 + graph×0.3) × importanceWeight
         for (CombinedScore cs : combined.values()) {
             double baseRelevance = cs.vectorScore * 0.7 + cs.graphScore * 0.3;
 
-            MemoryManager.MemoryItem item = memoryStore.get(cs.memoryId);
+            MemoryManager.MemoryItem item = docStore.getMemoryItem(cs.memoryId);
             double importance = item != null ? item.importance : 0.5;
             double importanceWeight = 0.8 + (importance * 0.4);
 
             cs.finalScore = baseRelevance * importanceWeight;
         }
 
-        // 排序
         List<CombinedScore> sorted = new ArrayList<>(combined.values());
         sorted.sort((a, b) -> Double.compare(b.finalScore, a.finalScore));
 
         int n = Math.min(limit > 0 ? limit : 5, sorted.size());
         List<MemoryManager.MemoryItem> results = new ArrayList<>();
         for (int i = 0; i < n; i++) {
-            MemoryManager.MemoryItem item = memoryStore.get(sorted.get(i).memoryId);
+            MemoryManager.MemoryItem item = docStore.getMemoryItem(sorted.get(i).memoryId);
             if (item != null) results.add(item);
         }
         return results;
@@ -280,63 +258,78 @@ public class SemanticMemory {
 
     // ==================== 实体提取 ====================
 
-    /** 实体提取（委托给 EntityRelationExtractor） */
+    /** 仅提取实体，不存储（用于检索时从查询中提取实体） */
     private List<Entity> extractEntities(String text) {
         return extractor.extractEntities(text);
     }
 
-    // ==================== 关系提取 ====================
-
-    /** 关系提取（委托给 EntityRelationExtractor） */
-    private List<Relation> extractRelations(String text, List<Entity> textEntities, String memoryId) {
-        return extractor.extractRelations(text, textEntities, memoryId);
+    /** 提取实体并存储到 GraphStore，返回已存储的实体 */
+    private List<GraphStore.EntityData> extractAndStoreEntities(String text) {
+        List<Entity> ents = extractor.extractEntities(text);
+        List<GraphStore.EntityData> result = new ArrayList<>();
+        for (Entity ent : ents) {
+            GraphStore.EntityData stored = graphStore.addEntity(ent.name, ent.type);
+            result.add(stored);
+        }
+        return result;
     }
 
-    // ==================== 实体查找 ====================
-
-    private Entity findEntityByName(String name, String type) {
-        for (Entity e : entities.values()) {
-            if (e.name.equals(name) && e.type.equals(type)) return e;
+    /** 提取关系并存储到 GraphStore */
+    private void extractAndStoreRelations(String text, List<GraphStore.EntityData> textEntities, String memoryId) {
+        List<Entity> entities = new ArrayList<>();
+        for (GraphStore.EntityData ge : textEntities) {
+            entities.add(new Entity(ge.id, ge.name, ge.type));
         }
-        return null;
-    }
-
-    // ==================== 向量工具 ====================
-
-    private double cosine(float[] a, float[] b) {
-        double dot = 0, normA = 0, normB = 0;
-        for (int i = 0; i < a.length; i++) {
-            dot += (double) a[i] * b[i];
-            normA += (double) a[i] * a[i];
-            normB += (double) b[i] * b[i];
+        List<Relation> rels = extractor.extractRelations(text, entities, memoryId);
+        for (Relation rel : rels) {
+            graphStore.addRelation(rel.subjectId, rel.predicate, rel.objectId, rel.memoryId);
         }
-        double denom = Math.sqrt(normA) * Math.sqrt(normB);
-        return denom == 0 ? 0 : dot / denom;
     }
 
     // ==================== 公开访问器 ====================
 
-    public int size() { return memoryStore.size(); }
-    public int entityCount() { return entities.size(); }
-    public int relationCount() { return relations.size(); }
+    public int size() { return docStore.countMemoryItems(); }
+    public int entityCount() { return graphStore.entityCount(); }
+    public int relationCount() { return graphStore.relationCount(); }
 
-    public Entity getEntity(String entityId) { return entities.get(entityId); }
-    public List<Entity> getAllEntities() { return new ArrayList<>(entities.values()); }
+    public Entity getEntity(String entityId) {
+        GraphStore.EntityData ge = graphStore.getEntity(entityId);
+        return ge != null ? new Entity(ge.id, ge.name, ge.type) : null;
+    }
+
+    public List<Entity> getAllEntities() {
+        List<Entity> result = new ArrayList<>();
+        for (GraphStore.EntityData ge : graphStore.getAllEntities()) {
+            result.add(new Entity(ge.id, ge.name, ge.type));
+        }
+        return result;
+    }
 
     public List<MemoryManager.MemoryItem> getByEntity(String entityId) {
-        Set<String> memIds = entityToMemories.getOrDefault(entityId, Collections.emptySet());
-        return memIds.stream().map(memoryStore::get).filter(Objects::nonNull)
-                .collect(Collectors.toList());
+        Set<String> memIds = graphStore.getLinkedMemories(entityId);
+        return memIds.stream().map(docStore::getMemoryItem)
+                .filter(Objects::nonNull).collect(Collectors.toList());
+    }
+
+    /** 获取记忆条目 */
+    public MemoryManager.MemoryItem getMemory(String id) {
+        return docStore.getMemoryItem(id);
     }
 
     public void clear() {
         vectorStore.clear();
-        entities.clear();
-        relations.clear();
-        entityToMemories.clear();
-        memoryToEntities.clear();
-        memoryStore.clear();
-        embedder.reset();
+        graphStore.clear();
+        docStore.clearAll();
+    }
+
+    /** 持久化向量和图存储 */
+    public void save() {
+        vectorStore.save();
+        graphStore.save();
+    }
+
+    public void close() {
+        if (ownDocStore) docStore.close();
     }
 
     // ==================== 内部类型 ====================

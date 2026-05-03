@@ -29,6 +29,8 @@ src/main/java/
 │   └── MyAdvancedSearchTool.java         # 多源搜索编排
 │
 ├── com/example/agent/memory/             # 记忆系统层
+│   ├── BaseMemory.java                   # 记忆系统公共接口
+│   ├── MemoryConfig.java                 # 统一配置 Builder
 │   ├── MemoryManager.java                # 统一记忆调度器
 │   ├── MemoryTool.java                   # 记忆管理工具 (9种操作)
 │   ├── WorkingMemory.java                # 工作记忆 (TF-IDF + 时间衰减)
@@ -40,6 +42,11 @@ src/main/java/
 │   ├── RAGTool.java                      # 检索增强生成工具
 │   ├── MarkdownChunker.java              # 标题感知智能分块
 │   └── DocumentReader.java               # Tika 通用文档读取
+│
+├── com/example/agent/store/              # 持久化存储层
+│   ├── VectorStore.java                  # 向量存储 (内存+JSON文件)
+│   ├── GraphStore.java                   # 图存储 (实体/关系+JSON文件)
+│   └── DocumentStore.java               # SQLite 文档存储
 │
 ├── com/example/agent/embedding/          # 嵌入服务层
 │   ├── EmbedderProvider.java             # 多后端自动降级调度器
@@ -92,6 +99,8 @@ HelloAgents-Java
 │   └── AsyncToolExecutor — CompletableFuture并行工具执行
 │
 ├── 记忆系统层 (Memory System Layer)
+│   ├── BaseMemory — 公共接口 (add/retrieve/size/clear)
+│   ├── MemoryConfig — 统一配置 Builder (容量/维度/衰减参数)
 │   ├── MemoryManager — 统一调度 (关键词检索 + 三种遗忘策略)
 │   ├── MemoryItem — 标准化记忆项 (id/content/type/importance/metadata)
 │   │
@@ -135,6 +144,11 @@ HelloAgents-Java
 │   ├── BailianEmbeddingClient — 阿里云百炼嵌入API
 │   └── LLMEmbeddingClient — OpenAI兼容嵌入API
 │
+├── 持久化存储层 (Storage Layer)
+│   ├── DocumentStore — SQLite 统一文档存储 (memory_items/episodes/documents/chunks)
+│   ├── VectorStore — 内存检索 + JSON文件持久化 (余弦相似度搜索)
+│   └── GraphStore — 实体-关系图存储 + JSON文件持久化 (实体去重/一跳邻居)
+│
 └── 应用层 (Application Layer)
     ├── PDFLearningAssistant — PDF智能学习助手
     │   └── RAGTool + MemoryTool 组合 · 会话管理 · 学习报告生成
@@ -147,15 +161,15 @@ HelloAgents-Java
 |--------|------|------|
 | MemoryManager | MemoryManager | ✅ 对齐 |
 | MemoryItem | MemoryManager.MemoryItem | ✅ 对齐 (内部类) |
-| MemoryConfig | (未实现) | ❌ 配置分散在各类构造函数中 |
-| BaseMemory | (未实现) | ❌ 各记忆类独立接口，无公共基类 |
+| MemoryConfig | MemoryConfig | ✅ Builder 模式，集中管理所有记忆配置 |
+| BaseMemory | BaseMemory | ✅ 公共接口 (add/retrieve/size/clear) |
 | WorkingMemory | WorkingMemory | ✅ 对齐 |
 | EpisodicMemory | EpisodicMemory | ✅ 对齐 |
 | SemanticMemory | SemanticMemory | ✅ 对齐 |
 | PerceptualMemory | PerceptualMemory | ✅ 对齐 |
-| **QdrantVectorStore** | **(无)** | ⚠️ 向量存储在内存 HashMap 中 |
-| **Neo4jGraphStore** | **(无)** | ⚠️ 图存储在内存 HashMap/List 中 |
-| **SQLiteDocumentStore** | **(无)** | ⚠️ 文档存储在内存 LinkedHashMap 中 |
+| **QdrantVectorStore** | **VectorStore** | ✅ 内存检索 + JSON文件持久化 |
+| **Neo4jGraphStore** | **GraphStore** | ✅ 实体-关系图 + JSON文件持久化 |
+| **SQLiteDocumentStore** | **DocumentStore** | ✅ SQLite (sqlite-jdbc) |
 | DashScopeEmbedding | BailianEmbeddingClient | ✅ 对齐 |
 | LocalTransformerEmbedding | BGEOnnxEmbedding | ✅ 对齐 (ONNX BGE) |
 | TFIDFEmbedding | TextEmbedder | ✅ 对齐 |
@@ -169,7 +183,7 @@ HelloAgents-Java
 
 ## 关键设计决策
 
-1. **纯内存存储** — 没有引入 Qdrant/Neo4j/SQLite，所有数据在 JVM 堆内。原型阶段够用，生产需外接向量数据库
+1. **可插拔存储后端** — VectorStore（内存+JSON文件）、GraphStore（实体关系图+JSON文件）、DocumentStore（SQLite）。默认内存模式零依赖启动，可选文件持久化。生产可替换为 Qdrant/Neo4j 等外部服务
 
 2. **嵌入降级链** — BGE(本地免费) → LLM API → 百炼 API → TF-IDF(兜底)。保证在任何配置下系统都能跑
 

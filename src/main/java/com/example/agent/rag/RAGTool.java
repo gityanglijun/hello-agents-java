@@ -1,21 +1,20 @@
 package com.example.agent.rag;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
 import com.example.agent.embedding.EmbedderProvider;
 import com.example.agent.llm.HelloAgentsLLM;
+import com.example.agent.store.DocumentStore;
+import com.example.agent.store.VectorStore;
 import com.example.agent.tool.Tool;
 import com.example.agent.tool.ToolParameter;
 
 /**
- * RAG 工具（检索增强生成）
- *
- * 提供完整的 RAG 能力：
- * - 添加多格式文档（文本、后续可扩展 PDF/Office/图片/音频）
- * - 智能分块 + 向量化 + 存储
- * - 语义检索与召回
- * - LLM 增强问答（检索 + 生成）
- * - 知识库管理
+ * RAG 工具（检索增强生成）— 使用 VectorStore + DocumentStore 作为存储后端。
  */
 public class RAGTool extends Tool {
 
@@ -28,7 +27,7 @@ public class RAGTool extends Tool {
         public final Map<String, String> metadata;
         public final String createdAt;
 
-        Document(String id, String title, String content, Map<String, String> metadata, String createdAt) {
+        public Document(String id, String title, String content, Map<String, String> metadata, String createdAt) {
             this.id = id;
             this.title = title;
             this.content = content;
@@ -44,10 +43,10 @@ public class RAGTool extends Tool {
         public final String content;
         public final int startChar;
         public final int endChar;
-        public final String headingPath;  // Markdown 标题路径，如 "Python > 函数"
+        public final String headingPath;
 
-        Chunk(String id, String docId, int index, String content,
-              int startChar, int endChar, String headingPath) {
+        public Chunk(String id, String docId, int index, String content,
+                     int startChar, int endChar, String headingPath) {
             this.id = id;
             this.docId = docId;
             this.index = index;
@@ -60,21 +59,11 @@ public class RAGTool extends Tool {
 
     // ==================== 存储层 ====================
 
-    // 文档存储
-    private final Map<String, Document> documents = new LinkedHashMap<>();
-    // 分块存储: chunkId → Chunk
-    private final Map<String, Chunk> chunks = new LinkedHashMap<>();
-    // 文档→分块索引: docId → [chunkId, ...]
-    private final Map<String, List<String>> docToChunks = new LinkedHashMap<>();
-    // 向量存储: chunkId → float[]
-    private final Map<String, float[]> vectorStore = new LinkedHashMap<>();
-    // 统一嵌入接口（百炼API → TF-IDF 自动降级）
+    private final DocumentStore docStore;
+    private final boolean ownDocStore;
+    private final VectorStore vectorStore;
     private final EmbedderProvider embedder;
-
-    // LLM（ask 时惰性初始化）
     private HelloAgentsLLM llm;
-
-    // 智能分块器（Markdown 结构感知）
     private final MarkdownChunker chunker;
 
     // ==================== 构造 ====================
@@ -84,9 +73,18 @@ public class RAGTool extends Tool {
     }
 
     public RAGTool(int chunkTokens, int overlapTokens, int vectorDim) {
+        this(chunkTokens, overlapTokens, vectorDim, null, null);
+    }
+
+    /** 使用外部存储后端（持久化）。传 null 则使用默认内存存储 */
+    public RAGTool(int chunkTokens, int overlapTokens, int vectorDim,
+                   DocumentStore docStore, VectorStore vectorStore) {
         super("rag", "RAG检索增强生成工具。支持文档添加、语义检索、LLM增强问答和知识库管理。");
         this.chunker = new MarkdownChunker(chunkTokens, overlapTokens);
         this.embedder = new EmbedderProvider(vectorDim);
+        this.docStore = docStore != null ? docStore : new DocumentStore(":memory:");
+        this.ownDocStore = docStore == null;
+        this.vectorStore = vectorStore != null ? vectorStore : new VectorStore(vectorDim);
         this.llm = null;
     }
 
@@ -115,10 +113,10 @@ public class RAGTool extends Tool {
     public List<ToolParameter> getParameters() {
         return List.of(
                 new ToolParameter("action", "string", "操作: add_document, add_file, search, ask, list_documents, remove_document, stats, expanded_search"),
-                new ToolParameter("enable_mqe", "boolean", "expanded_search: 启用多查询扩展（默认false）"),
-                new ToolParameter("mqe_expansions", "integer", "expanded_search: MQE 扩展查询数（默认2）"),
-                new ToolParameter("enable_hyde", "boolean", "expanded_search: 启用假设文档嵌入（默认false）"),
-                new ToolParameter("candidate_pool_multiplier", "integer", "expanded_search: 候选池倍数（默认4）"),
+                new ToolParameter("enable_mqe", "boolean", "expanded_search: 启用多查询扩展"),
+                new ToolParameter("mqe_expansions", "integer", "expanded_search: MQE 扩展查询数"),
+                new ToolParameter("enable_hyde", "boolean", "expanded_search: 启用假设文档嵌入"),
+                new ToolParameter("candidate_pool_multiplier", "integer", "expanded_search: 候选池倍数"),
                 new ToolParameter("score_threshold", "number", "expanded_search: 最低分数阈值"),
                 new ToolParameter("file_path", "string", "文件路径（add_file）"),
                 new ToolParameter("title", "string", "文档标题（add_document）"),
@@ -126,7 +124,7 @@ public class RAGTool extends Tool {
                 new ToolParameter("query", "string", "检索查询 / 问答问题"),
                 new ToolParameter("doc_id", "string", "文档ID（remove_document）"),
                 new ToolParameter("top_k", "integer", "检索返回数量（默认5）"),
-                new ToolParameter("enable_llm", "boolean", "ask 是否启用 LLM 生成（默认true）")
+                new ToolParameter("enable_llm", "boolean", "ask 是否启用 LLM 生成")
         );
     }
 
@@ -139,10 +137,8 @@ public class RAGTool extends Tool {
             if (content.isBlank()) return "❌ 文档内容不能为空";
 
             String docId = UUID.randomUUID().toString();
-            String now = java.time.LocalDateTime.now()
-                    .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+            String now = now();
 
-            // 提取元数据
             Map<String, String> metadata = new LinkedHashMap<>();
             for (Map.Entry<String, Object> e : params.entrySet()) {
                 if (!List.of("action", "title", "content").contains(e.getKey())
@@ -151,25 +147,23 @@ public class RAGTool extends Tool {
                 }
             }
 
-            Document doc = new Document(docId, title, content, metadata, now);
-            documents.put(docId, doc);
+            // 文档存储
+            docStore.insertDocument(docId, title, content, metadata, now);
 
-            // Markdown 结构感知分块
+            // 分块
             List<MarkdownChunker.Chunk> mdChunks = chunker.chunk(content);
-            docToChunks.put(docId, new ArrayList<>());
 
             for (int ci = 0; ci < mdChunks.size(); ci++) {
                 MarkdownChunker.Chunk mc = mdChunks.get(ci);
-                Chunk chunk = new Chunk(
-                        UUID.randomUUID().toString(), docId, ci,
-                        mc.content, mc.startChar, mc.endChar, mc.headingPath);
-                chunks.put(chunk.id, chunk);
-                docToChunks.get(docId).add(chunk.id);
+                String chunkId = UUID.randomUUID().toString();
 
-                embedder.register(chunk.content);
+                docStore.insertChunk(chunkId, docId, ci, mc.content,
+                        mc.startChar, mc.endChar, mc.headingPath);
+
+                embedder.register(mc.content);
                 float[] vec = embedder.encode(
-                        EmbedderProvider.preprocessMarkdown(chunk.content));
-                vectorStore.put(chunk.id, vec);
+                        EmbedderProvider.preprocessMarkdown(mc.content));
+                vectorStore.add(chunkId, vec);
             }
 
             return "✅ 文档已添加\n"
@@ -189,21 +183,18 @@ public class RAGTool extends Tool {
 
     private String addFile(Map<String, Object> params) {
         try {
-            String filePath = (String) params.getOrDefault("file_path",
-                    params.get("path"));
+            String filePath = (String) params.getOrDefault("file_path", params.get("path"));
             if (filePath == null || filePath.isBlank()) return "❌ 需要提供 file_path";
 
-            java.nio.file.Path path = java.nio.file.Paths.get(filePath);
-            if (!java.nio.file.Files.exists(path)) {
+            Path path = Path.of(filePath);
+            if (!Files.exists(path)) {
                 return "❌ 文件不存在: " + filePath;
             }
 
-            // 检查是否需要外部依赖（目前仅音频需要）
             if (DocumentReader.needsExternalLib(filePath)) {
                 System.out.println("[RAG] 音频文件需 Vosk/Whisper: " + filePath);
             }
 
-            // 读取文件内容，包装为 Markdown 结构
             String content = DocumentReader.readAsMarkdown(filePath);
             if (content.isBlank()) {
                 return "❌ 无法读取文件内容: " + filePath
@@ -212,11 +203,9 @@ public class RAGTool extends Tool {
                             : "");
             }
 
-            // 如果没有指定标题，用文件名做标题
             String title = (String) params.getOrDefault("title",
                     path.getFileName().toString());
 
-            // 委托给 addDocument
             Map<String, Object> addParams = new LinkedHashMap<>(params);
             addParams.put("title", title);
             addParams.put("content", content);
@@ -248,7 +237,7 @@ public class RAGTool extends Tool {
             for (int i = 0; i < hits.size(); i++) {
                 ChunkHit hit = hits.get(i);
                 Chunk chunk = hit.chunk;
-                Document doc = documents.get(chunk.docId);
+                Document doc = docStore.getDocument(chunk.docId);
                 String docTitle = doc != null ? doc.title : "(已删除)";
 
                 sb.append("--- 片段 ").append(i + 1)
@@ -268,7 +257,7 @@ public class RAGTool extends Tool {
         }
     }
 
-    // ==================== Action: ask（完整 RAG） ====================
+    // ==================== Action: ask ====================
 
     private String ask(Map<String, Object> params) {
         try {
@@ -282,7 +271,6 @@ public class RAGTool extends Tool {
             boolean enableMqe = getBool(params, "enable_mqe", false);
             boolean enableHyde = getBool(params, "enable_hyde", false);
 
-            // 1. 检索相关片段（高级检索 OR 简单检索）
             List<ChunkHit> hits;
             if (enableAdvanced && initLLM()) {
                 hits = searchVectorsExpanded(query, topK,
@@ -294,12 +282,11 @@ public class RAGTool extends Tool {
             }
             if (hits.isEmpty()) return "🔍 未找到与问题相关的知识";
 
-            // 2. 构建上下文
             StringBuilder context = new StringBuilder();
             List<String> sources = new ArrayList<>();
             for (int i = 0; i < hits.size(); i++) {
                 Chunk chunk = hits.get(i).chunk;
-                Document doc = documents.get(chunk.docId);
+                Document doc = docStore.getDocument(chunk.docId);
                 context.append("【来源").append(i + 1).append("】");
                 if (chunk.headingPath != null) {
                     context.append(" [章节: ").append(chunk.headingPath).append("]");
@@ -310,7 +297,6 @@ public class RAGTool extends Tool {
                 }
             }
 
-            // 3. LLM 生成答案
             if (enableLLM && initLLM()) {
                 String prompt = buildRAGPrompt(query, context.toString());
                 String answer = callLLM(prompt);
@@ -325,7 +311,6 @@ public class RAGTool extends Tool {
                 return result.toString().trim();
             }
 
-            // 4. 降级：仅返回检索片段
             StringBuilder sb = new StringBuilder();
             sb.append("📄 检索结果（未启用 LLM）:\n\n");
             for (int i = 0; i < hits.size(); i++) {
@@ -342,14 +327,16 @@ public class RAGTool extends Tool {
     // ==================== Action: list_documents ====================
 
     private String listDocuments() {
-        if (documents.isEmpty()) return "📚 知识库为空";
+        List<Document> docs = docStore.getAllDocuments();
+        if (docs.isEmpty()) return "📚 知识库为空";
 
         StringBuilder sb = new StringBuilder();
-        sb.append("📚 知识库文档列表 (").append(documents.size()).append(" 篇):\n\n");
+        sb.append("📚 知识库文档列表 (").append(docs.size()).append(" 篇):\n\n");
 
         int i = 1;
-        for (Document doc : documents.values()) {
-            int chunkCount = docToChunks.getOrDefault(doc.id, Collections.emptyList()).size();
+        for (Document doc : docs) {
+            List<Map<String, String>> chunkRaws = docStore.getChunksByDocId(doc.id);
+            int chunkCount = chunkRaws.size();
             String preview = doc.content.length() > 80
                     ? doc.content.substring(0, 80).replace("\n", " ") + "..."
                     : doc.content.replace("\n", " ");
@@ -370,32 +357,33 @@ public class RAGTool extends Tool {
         String docId = (String) params.getOrDefault("doc_id", params.get("id"));
         if (docId == null || docId.isBlank()) return "❌ 需要提供 doc_id";
 
-        // 支持前缀匹配
-        String fullId = findDocId(docId);
-        if (fullId == null) return "❌ 未找到文档: " + docId;
+        Document doc = docStore.getDocument(docId);
+        if (doc == null) return "❌ 未找到文档: " + docId;
 
-        Document doc = documents.remove(fullId);
-        List<String> chunkIds = docToChunks.remove(fullId);
-        if (chunkIds != null) {
-            for (String cid : chunkIds) {
-                chunks.remove(cid);
-                vectorStore.remove(cid);
-            }
+        // 清理向量存储
+        List<Map<String, String>> chunkRaws = docStore.getChunksByDocId(doc.id);
+        for (Map<String, String> c : chunkRaws) {
+            vectorStore.remove(c.get("id"));
         }
 
+        docStore.deleteDocument(docId);
+
         return "🗑️ 已删除文档: " + doc.title
-                + "（含 " + (chunkIds != null ? chunkIds.size() : 0) + " 个分块）";
+                + "（含 " + chunkRaws.size() + " 个分块）";
     }
 
     // ==================== Action: stats ====================
 
     private String stats() {
-        int docCount = documents.size();
-        int chunkCount = chunks.size();
+        int docCount = docStore.countDocuments();
+        int chunkCount = docStore.countChunks();
 
         if (docCount == 0) return "📊 知识库为空";
 
-        long totalChars = documents.values().stream().mapToLong(d -> d.content.length()).sum();
+        long totalChars = 0;
+        for (Document doc : docStore.getAllDocuments()) {
+            totalChars += doc.content.length();
+        }
         double avgChunks = docCount > 0 ? (double) chunkCount / docCount : 0;
 
         return "📊 知识库统计:\n"
@@ -404,9 +392,8 @@ public class RAGTool extends Tool {
                 + "  分块数: " + chunkCount + "\n"
                 + "  平均分块/文档: " + String.format("%.1f", avgChunks) + "\n"
                 + "  向量维度: " + (vectorStore.isEmpty() ? "N/A"
-                        : String.valueOf(vectorStore.values().iterator().next().length));
+                        : embedder.getDimension());
     }
-
 
     // ==================== 检索 ====================
 
@@ -414,20 +401,15 @@ public class RAGTool extends Tool {
         float[] queryVec = embedder.encode(
                 EmbedderProvider.preprocessMarkdown(query));
 
-        List<ChunkHit> hits = new ArrayList<>();
-        for (Map.Entry<String, float[]> entry : vectorStore.entrySet()) {
-            double sim = cosine(queryVec, entry.getValue());
-            if (sim > 0) {
-                Chunk chunk = chunks.get(entry.getKey());
-                if (chunk != null) {
-                    hits.add(new ChunkHit(chunk, sim));
-                }
+        List<VectorStore.VectorHit> hits = vectorStore.search(queryVec, topK);
+        List<ChunkHit> results = new ArrayList<>();
+        for (VectorStore.VectorHit hit : hits) {
+            Chunk chunk = rawToChunk(docStore.getChunkRaw(hit.id));
+            if (chunk != null) {
+                results.add(new ChunkHit(chunk, hit.score));
             }
         }
-
-        hits.sort((a, b) -> Double.compare(b.score, a.score));
-        int n = Math.min(topK > 0 ? topK : 5, hits.size());
-        return hits.subList(0, n);
+        return results;
     }
 
     // ==================== LLM 增强 ====================
@@ -470,61 +452,8 @@ public class RAGTool extends Tool {
         }
     }
 
-    // ==================== 工具方法 ====================
+    // ==================== 扩展检索 ====================
 
-    private String findDocId(String idOrPrefix) {
-        // 精确匹配
-        if (documents.containsKey(idOrPrefix)) return idOrPrefix;
-        // 前缀匹配
-        for (String id : documents.keySet()) {
-            if (id.startsWith(idOrPrefix)) return id;
-        }
-        return null;
-    }
-
-    private double cosine(float[] a, float[] b) {
-        double dot = 0, normA = 0, normB = 0;
-        for (int i = 0; i < a.length; i++) {
-            dot += (double) a[i] * b[i];
-            normA += (double) a[i] * a[i];
-            normB += (double) b[i] * b[i];
-        }
-        double denom = Math.sqrt(normA) * Math.sqrt(normB);
-        return denom == 0 ? 0 : dot / denom;
-    }
-
-    private double getDouble(Map<String, Object> params, String key, double def) {
-        Object v = params.get(key);
-        if (v instanceof Number) return ((Number) v).doubleValue();
-        if (v instanceof String) {
-            try { return Double.parseDouble((String) v); } catch (NumberFormatException ignored) {}
-        }
-        return def;
-    }
-
-    private int getInt(Map<String, Object> params, String key, int def) {
-        Object v = params.get(key);
-        if (v instanceof Number) return ((Number) v).intValue();
-        if (v instanceof String) {
-            try { return Integer.parseInt((String) v); } catch (NumberFormatException ignored) {}
-        }
-        return def;
-    }
-
-    private boolean getBool(Map<String, Object> params, String key, boolean def) {
-        Object v = params.get(key);
-        if (v instanceof Boolean) return (Boolean) v;
-        if (v instanceof String) return Boolean.parseBoolean((String) v);
-        return def;
-    }
-
-    // ==================== Action: expanded_search ====================
-
-    /**
-     * 扩展检索（统一入口）。
-     * 支持 MQE（多查询扩展）和 HyDE（假设文档嵌入）两种互补策略，
-     * 通过"扩展-检索-合并"三步流程提高召回率。
-     */
     private String expandedSearch(Map<String, Object> params) {
         try {
             String query = (String) params.getOrDefault("query",
@@ -539,7 +468,6 @@ public class RAGTool extends Tool {
             Double scoreThreshold = params.containsKey("score_threshold")
                     ? getDouble(params, "score_threshold", 0) : null;
 
-            // 检查 LLM 是否可用（MQE 和 HyDE 需要）
             boolean needLLM = enableMqe || enableHyde;
             if (needLLM && !initLLM()) {
                 System.out.println("[RAG] LLM 不可用，降级为普通检索");
@@ -552,7 +480,6 @@ public class RAGTool extends Tool {
 
             if (hits.isEmpty()) return "🔍 未找到与 '" + query + "' 相关的内容（扩展检索）";
 
-            // 格式化结果（与 search 一致）
             StringBuilder sb = new StringBuilder();
             sb.append("🔍 扩展检索找到 ").append(hits.size()).append(" 个结果");
 
@@ -565,7 +492,7 @@ public class RAGTool extends Tool {
             for (int i = 0; i < hits.size(); i++) {
                 ChunkHit hit = hits.get(i);
                 Chunk chunk = hit.chunk;
-                Document doc = documents.get(chunk.docId);
+                Document doc = docStore.getDocument(chunk.docId);
                 String docTitle = doc != null ? doc.title : "(已删除)";
 
                 sb.append("--- 片段 ").append(i + 1)
@@ -585,12 +512,8 @@ public class RAGTool extends Tool {
         }
     }
 
-    // ==================== MQE：多查询扩展 ====================
+    // ==================== MQE ====================
 
-    /**
-     * 使用 LLM 生成多样化的查询扩展。
-     * 同一个问题有多种表述方式，不同表述可能匹配到不同文档。
-     */
     private List<String> promptMqe(String query, int n) {
         try {
             String prompt = "你是检索查询扩展助手。生成语义等价或互补的多样化查询。使用中文，简短，避免标点。\n\n"
@@ -619,13 +542,8 @@ public class RAGTool extends Tool {
         }
     }
 
-    // ==================== HyDE：假设文档嵌入 ====================
+    // ==================== HyDE ====================
 
-    /**
-     * 生成假设性文档用于改善检索——"用答案找答案"。
-     * LLM 先生成假设答案段落，再用这个段落去检索真实文档，
-     * 缩小问题（疑问句）和文档（陈述句）之间的语义鸿沟。
-     */
     private String promptHyde(String query) {
         try {
             String text = llm.think(List.of(
@@ -645,19 +563,12 @@ public class RAGTool extends Tool {
 
     // ==================== 扩展检索核心 ====================
 
-    /**
-     * "扩展-检索-合并"三步流程：
-     * 1. 扩展：生成多个扩展查询（MQE + HyDE）
-     * 2. 检索：对每个扩展查询并行执行向量检索
-     * 3. 合并：去重 + 按分数排序，返回 top-K
-     */
     private List<ChunkHit> searchVectorsExpanded(
             String query, int topK,
             boolean enableMqe, int mqeExpansions,
             boolean enableHyde, int poolMultiplier,
             Double scoreThreshold) {
 
-        // === 第1步：查询扩展 ===
         List<String> expansions = new ArrayList<>();
         expansions.add(query);
 
@@ -674,7 +585,6 @@ public class RAGTool extends Tool {
             }
         }
 
-        // 去重
         List<String> unique = new ArrayList<>();
         for (String e : expansions) {
             if (e != null && !e.isBlank() && !unique.contains(e)) {
@@ -683,7 +593,6 @@ public class RAGTool extends Tool {
         }
         System.out.println("[RAG] 扩展查询: " + unique.size() + " 个（原始 + MQE + HyDE）");
 
-        // === 第2步：分配候选池并检索 ===
         int poolSize = Math.max(topK * poolMultiplier, 20);
         int perQuery = Math.max(1, poolSize / Math.max(1, unique.size()));
         System.out.println("[RAG] 候选池: " + poolSize + ", 每查询: " + perQuery);
@@ -694,32 +603,20 @@ public class RAGTool extends Tool {
             float[] queryVec = embedder.encode(
                     EmbedderProvider.preprocessMarkdown(q));
 
-            List<ChunkHit> hits = new ArrayList<>();
-            for (Map.Entry<String, float[]> entry : vectorStore.entrySet()) {
-                double sim = EmbedderProvider.cosineSimilarity(queryVec, entry.getValue());
-                if (scoreThreshold != null && sim < scoreThreshold) continue;
-                if (sim > 0) {
-                    Chunk chunk = chunks.get(entry.getKey());
-                    if (chunk != null) {
-                        hits.add(new ChunkHit(chunk, sim));
-                    }
-                }
-            }
+            List<VectorStore.VectorHit> hits = vectorStore.search(queryVec, perQuery);
 
-            hits.sort((a, b) -> Double.compare(b.score, a.score));
-            int limit = Math.min(perQuery, hits.size());
-
-            for (int i = 0; i < limit; i++) {
-                ChunkHit hit = hits.get(i);
-                String key = hit.chunk.id;
-                ChunkHit existing = aggregated.get(key);
+            for (VectorStore.VectorHit hit : hits) {
+                if (scoreThreshold != null && hit.score < scoreThreshold) continue;
+                ChunkHit existing = aggregated.get(hit.id);
                 if (existing == null || hit.score > existing.score) {
-                    aggregated.put(key, hit);
+                    Chunk chunk = rawToChunk(docStore.getChunkRaw(hit.id));
+                    if (chunk != null) {
+                        aggregated.put(hit.id, new ChunkHit(chunk, hit.score));
+                    }
                 }
             }
         }
 
-        // === 第3步：合并排序 ===
         List<ChunkHit> merged = new ArrayList<>(aggregated.values());
         merged.sort((a, b) -> Double.compare(b.score, a.score));
         int resultLimit = Math.min(topK, merged.size());
@@ -730,14 +627,9 @@ public class RAGTool extends Tool {
 
     // ==================== 批量索引 ====================
 
-    /**
-     * 批量索引 Markdown 分块。
-     * 使用时先调用 chunker.chunk() 获取分块列表，再批量嵌入存储。
-     */
     public void indexChunks(String docId, List<MarkdownChunker.Chunk> mdChunks) {
         if (mdChunks.isEmpty()) return;
 
-        // 收集内容并预处理
         List<String> texts = new ArrayList<>();
         for (MarkdownChunker.Chunk mc : mdChunks) {
             texts.add(EmbedderProvider.preprocessMarkdown(mc.content));
@@ -747,57 +639,102 @@ public class RAGTool extends Tool {
                 + "后端: " + embedder.getActiveBackend()
                 + " (" + embedder.getDimension() + " 维)");
 
-        // 批量编码
-        List<float[]> vectors;
-        if (embedder.getActiveBackend() == EmbedderProvider.Backend.BAILIAN) {
-            vectors = embedder.encodeBatch(texts);
-        } else {
-            // TF-IDF 需要先注册再逐个编码
-            vectors = new ArrayList<>();
-            for (int i = 0; i < texts.size(); i++) {
-                embedder.register(texts.get(i));
-                vectors.add(embedder.encode(texts.get(i)));
-            }
+        for (int i = 0; i < texts.size(); i++) {
+            embedder.register(texts.get(i));
         }
 
-        // 存储
-        docToChunks.putIfAbsent(docId, new ArrayList<>());
         for (int i = 0; i < mdChunks.size(); i++) {
             MarkdownChunker.Chunk mc = mdChunks.get(i);
-            Chunk chunk = new Chunk(UUID.randomUUID().toString(), docId, i,
-                    mc.content, mc.startChar, mc.endChar, mc.headingPath);
-            chunks.put(chunk.id, chunk);
-            docToChunks.get(docId).add(chunk.id);
-            vectorStore.put(chunk.id,
-                    i < vectors.size() ? vectors.get(i) : new float[embedder.getDimension()]);
+            String chunkId = UUID.randomUUID().toString();
+
+            docStore.insertChunk(chunkId, docId, i, mc.content,
+                    mc.startChar, mc.endChar, mc.headingPath);
+
+            float[] vec = embedder.encode(texts.get(i));
+            vectorStore.add(chunkId, vec);
         }
     }
 
     // ==================== 公开访问器 ====================
 
-    public int docCount() { return documents.size(); }
-    public int chunkCount() { return chunks.size(); }
+    public int docCount() { return docStore.countDocuments(); }
+    public int chunkCount() { return docStore.countChunks(); }
 
-    public Document getDocument(String id) {
-        String fullId = findDocId(id);
-        return fullId != null ? documents.get(fullId) : null;
+    public Document getDocument(String idOrPrefix) {
+        return docStore.getDocument(idOrPrefix);
     }
 
     public List<Chunk> getChunks(String docId) {
-        String fullId = findDocId(docId);
-        if (fullId == null) return Collections.emptyList();
-        List<String> ids = docToChunks.getOrDefault(fullId, Collections.emptyList());
-        return ids.stream().map(chunks::get).filter(Objects::nonNull).collect(Collectors.toList());
+        Document doc = docStore.getDocument(docId);
+        if (doc == null) return Collections.emptyList();
+        List<Map<String, String>> raws = docStore.getChunksByDocId(doc.id);
+        return raws.stream().map(this::rawToChunk)
+                .filter(Objects::nonNull).collect(Collectors.toList());
     }
 
     public void clear() {
-        documents.clear();
-        chunks.clear();
-        docToChunks.clear();
+        docStore.clearAll();
         vectorStore.clear();
     }
 
     public EmbedderProvider getEmbedder() { return embedder; }
+
+    /** 持久化向量存储 */
+    public void saveVectors() { vectorStore.save(); }
+
+    public void close() {
+        if (ownDocStore) docStore.close();
+    }
+
+    // ==================== 类型转换 ====================
+
+    private Chunk rawToChunk(Map<String, String> raw) {
+        if (raw == null) return null;
+        try {
+            return new Chunk(
+                    raw.get("id"),
+                    raw.get("docId"),
+                    Integer.parseInt(raw.getOrDefault("index", "0")),
+                    raw.get("content"),
+                    Integer.parseInt(raw.getOrDefault("startChar", "0")),
+                    Integer.parseInt(raw.getOrDefault("endChar", "0")),
+                    raw.get("headingPath")
+            );
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // ==================== 工具方法 ====================
+
+    private double getDouble(Map<String, Object> params, String key, double def) {
+        Object v = params.get(key);
+        if (v instanceof Number) return ((Number) v).doubleValue();
+        if (v instanceof String) {
+            try { return Double.parseDouble((String) v); } catch (NumberFormatException ignored) {}
+        }
+        return def;
+    }
+
+    private int getInt(Map<String, Object> params, String key, int def) {
+        Object v = params.get(key);
+        if (v instanceof Number) return ((Number) v).intValue();
+        if (v instanceof String) {
+            try { return Integer.parseInt((String) v); } catch (NumberFormatException ignored) {}
+        }
+        return def;
+    }
+
+    private boolean getBool(Map<String, Object> params, String key, boolean def) {
+        Object v = params.get(key);
+        if (v instanceof Boolean) return (Boolean) v;
+        if (v instanceof String) return Boolean.parseBoolean((String) v);
+        return def;
+    }
+
+    private static String now() {
+        return LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+    }
 
     // ==================== 内部类型 ====================
 

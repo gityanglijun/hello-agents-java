@@ -1,15 +1,17 @@
 package com.example.agent.memory;
+
+import com.example.agent.store.DocumentStore;
+import com.example.agent.store.VectorStore;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class EpisodicMemory {
+public class EpisodicMemory implements BaseMemory {
 
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
-    // maxAgeDays=0 表示不限时间
-    private static final int DEFAULT_MAX_AGE_DAYS = 0;
+    private static final int DEFAULT_VECTOR_DIM = 256;
 
     // ==================== 内部类型 ====================
 
@@ -32,37 +34,40 @@ public class EpisodicMemory {
 
     // ==================== 存储层 ====================
 
-    // 模拟 SQLite 文档存储
-    private final Map<String, Episode> docStore = new LinkedHashMap<>();
-
-    // 会话索引: sessionId → [episodeId, ...]
-    private final Map<String, List<String>> sessions = new LinkedHashMap<>();
-
-    // 模拟 Qdrant 向量存储: episodeId → 向量
-    private final Map<String, float[]> vectorStore = new LinkedHashMap<>();
-
-    // 文本嵌入器
+    private final DocumentStore docStore;
+    private final boolean ownDocStore;  // 是否由本类管理 docStore 生命周期
+    private final VectorStore vectorStore;
     private final TextEmbedder embedder;
 
     // ==================== 构造 ====================
 
     public EpisodicMemory() {
-        this.embedder = new TextEmbedder(256);
+        this(DEFAULT_VECTOR_DIM);
     }
 
     public EpisodicMemory(int vectorDim) {
-        this.embedder = new TextEmbedder(vectorDim);
+        this(new TextEmbedder(vectorDim), null, null);
     }
 
-    /** 允许注入自定义嵌入器 */
     public EpisodicMemory(TextEmbedder embedder) {
-        this.embedder = embedder != null ? embedder : new TextEmbedder(256);
+        this(embedder, null, null);
+    }
+
+    public EpisodicMemory(MemoryConfig config) {
+        this(new TextEmbedder(config.embedderFallbackDim), null, null);
+    }
+
+    /** 使用外部存储后端（持久化）。传 null 则使用默认内存存储 */
+    public EpisodicMemory(TextEmbedder embedder, DocumentStore docStore, VectorStore vectorStore) {
+        this.embedder = embedder != null ? embedder : new TextEmbedder(DEFAULT_VECTOR_DIM);
+        this.docStore = docStore != null ? docStore : new DocumentStore(":memory:");
+        this.ownDocStore = docStore == null;
+        this.vectorStore = vectorStore != null ? vectorStore : new VectorStore(DEFAULT_VECTOR_DIM);
     }
 
     // ==================== 添加 ====================
 
     public String add(MemoryManager.MemoryItem item) {
-        // 创建情景对象
         Episode episode = new Episode(
                 item.id,
                 item.metadata.getOrDefault("session_id", "default"),
@@ -71,17 +76,14 @@ public class EpisodicMemory {
                 item.metadata
         );
 
-        // 更新会话索引
-        sessions.computeIfAbsent(episode.sessionId, k -> new ArrayList<>())
-                .add(episode.episodeId);
+        // 文档存储
+        docStore.insertEpisode(episode.episodeId, episode.sessionId,
+                episode.timestamp, episode.content, episode.context);
 
-        // 持久化存储
-        docStore.put(episode.episodeId, episode);
-
-        // 注册到向量器的词汇表（更新 DF 统计），再生成向量
+        // 向量存储
         embedder.register(item.content);
         float[] vector = embedder.encode(item.content);
-        vectorStore.put(item.id, vector);
+        vectorStore.add(item.id, vector);
 
         return item.id;
     }
@@ -93,16 +95,16 @@ public class EpisodicMemory {
         Set<String> candidateIds = structuredFilter(kwargs);
 
         // 2. 向量语义检索
-        List<VectorHit> hits = vectorSearch(query, limit * 5, kwargs);
+        List<VectorStore.VectorHit> hits = vectorSearch(query, limit * 5, kwargs);
 
         // 3. 综合评分与排序
         List<ScoredItem> results = new ArrayList<>();
-        for (VectorHit hit : hits) {
-            if (shouldInclude(hit, candidateIds, kwargs)) {
+        for (VectorStore.VectorHit hit : hits) {
+            if (shouldInclude(hit.id, candidateIds, kwargs)) {
                 double score = calculateEpisodeScore(hit);
-                Episode ep = docStore.get(hit.episodeId);
-                if (ep != null) {
-                    results.add(new ScoredItem(score, toMemoryItem(ep)));
+                Map<String, String> raw = docStore.getEpisodeRaw(hit.id);
+                if (raw != null) {
+                    results.add(new ScoredItem(score, episodeToMemoryItem(raw)));
                 }
             }
         }
@@ -122,39 +124,47 @@ public class EpisodicMemory {
     // ==================== 结构化过滤 ====================
 
     private Set<String> structuredFilter(Map<String, Object> kwargs) {
-        Set<String> ids = new LinkedHashSet<>(docStore.keySet());
+        List<Map<String, String>> all = docStore.getAllEpisodes();
+        Set<String> ids = all.stream()
+                .map(m -> m.get("episodeId"))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
         if (kwargs == null || kwargs.isEmpty()) return ids;
 
         // 时间范围过滤
         if (kwargs.containsKey("start_time")) {
             String start = kwargs.get("start_time").toString();
             ids.removeIf(id -> {
-                Episode ep = docStore.get(id);
-                return ep != null && ep.timestamp.compareTo(start) < 0;
+                Map<String, String> raw = docStore.getEpisodeRaw(id);
+                return raw != null && raw.get("timestamp").compareTo(start) < 0;
             });
         }
         if (kwargs.containsKey("end_time")) {
             String end = kwargs.get("end_time").toString();
             ids.removeIf(id -> {
-                Episode ep = docStore.get(id);
-                return ep != null && ep.timestamp.compareTo(end) > 0;
+                Map<String, String> raw = docStore.getEpisodeRaw(id);
+                return raw != null && raw.get("timestamp").compareTo(end) > 0;
             });
         }
 
         // 会话过滤
         if (kwargs.containsKey("session_id")) {
             String sid = kwargs.get("session_id").toString();
-            List<String> sessionEpisodeIds = sessions.getOrDefault(sid, Collections.emptyList());
-            ids.retainAll(sessionEpisodeIds);
+            List<Map<String, String>> sessionEps = docStore.getEpisodesBySession(sid);
+            Set<String> sessionIds = sessionEps.stream()
+                    .map(m -> m.get("episodeId"))
+                    .collect(Collectors.toSet());
+            ids.retainAll(sessionIds);
         }
 
         // 重要性过滤
         if (kwargs.containsKey("min_importance")) {
             double minImp = toDouble(kwargs.get("min_importance"));
             ids.removeIf(id -> {
-                Episode ep = docStore.get(id);
-                if (ep == null) return true;
-                double imp = toDouble(ep.context.getOrDefault("importance", "0.5"));
+                Map<String, String> raw = docStore.getEpisodeRaw(id);
+                if (raw == null) return true;
+                Map<String, String> ctx = parseContext(raw.get("context"));
+                double imp = toDouble(ctx.getOrDefault("importance", "0.5"));
                 return imp < minImp;
             });
         }
@@ -164,42 +174,35 @@ public class EpisodicMemory {
 
     // ==================== 向量检索 ====================
 
-    private List<VectorHit> vectorSearch(String query, int topK, Map<String, Object> kwargs) {
+    private List<VectorStore.VectorHit> vectorSearch(String query, int topK, Map<String, Object> kwargs) {
         float[] queryVec = embedder.encode(query);
+        List<VectorStore.VectorHit> allHits = vectorStore.search(queryVec, Math.max(topK, 50));
 
-        List<VectorHit> hits = new ArrayList<>();
-        for (Map.Entry<String, float[]> entry : vectorStore.entrySet()) {
-            // 可选的 user_id 过滤（从 context 中）
-            if (kwargs.containsKey("user_id")) {
-                Episode ep = docStore.get(entry.getKey());
-                if (ep == null || !kwargs.get("user_id").toString()
-                        .equals(ep.context.get("user_id"))) {
-                    continue;
-                }
-            }
-
-            double sim = cosineSimilarity(queryVec, entry.getValue());
-            if (sim > 0) {
-                hits.add(new VectorHit(entry.getKey(), sim));
-            }
+        // user_id 过滤
+        if (kwargs.containsKey("user_id")) {
+            String wantedUser = kwargs.get("user_id").toString();
+            allHits.removeIf(hit -> {
+                Map<String, String> raw = docStore.getEpisodeRaw(hit.id);
+                if (raw == null) return true;
+                Map<String, String> ctx = parseContext(raw.get("context"));
+                return !wantedUser.equals(ctx.get("user_id"));
+            });
         }
 
-        hits.sort((a, b) -> Double.compare(b.score, a.score));
-        int n = Math.min(topK, hits.size());
-        return hits.subList(0, n);
+        int n = Math.min(topK, allHits.size());
+        return allHits.subList(0, n);
     }
 
     // ==================== 评分 ====================
 
-    private double calculateEpisodeScore(VectorHit hit) {
+    private double calculateEpisodeScore(VectorStore.VectorHit hit) {
         double vecScore = hit.score;
-        Episode ep = docStore.get(hit.episodeId);
-        double recencyScore = calculateRecency(ep != null ? ep.timestamp : null);
-        double importance = ep != null
-                ? toDouble(ep.context.getOrDefault("importance", "0.5"))
-                : 0.5;
+        Map<String, String> raw = docStore.getEpisodeRaw(hit.id);
+        String ts = raw != null ? raw.get("timestamp") : null;
+        Map<String, String> ctx = raw != null ? parseContext(raw.get("context")) : Collections.emptyMap();
+        double recencyScore = calculateRecency(ts);
+        double importance = toDouble(ctx.getOrDefault("importance", "0.5"));
 
-        // (向量相似度 × 0.8 + 时间近因性 × 0.2) × 重要性权重
         double baseRelevance = vecScore * 0.8 + recencyScore * 0.2;
         double importanceWeight = 0.8 + (importance * 0.4);
 
@@ -211,7 +214,6 @@ public class EpisodicMemory {
             if (timestamp == null) return 0.5;
             LocalDateTime t = LocalDateTime.parse(timestamp, ISO);
             long ageHours = ChronoUnit.HOURS.between(t, LocalDateTime.now());
-            // 与 WorkingMemory 近似的指数衰减，最低 0.1
             double score = Math.exp(-0.1 * ageHours / 24.0);
             return Math.max(0.1, score);
         } catch (Exception e) {
@@ -221,18 +223,17 @@ public class EpisodicMemory {
 
     // ==================== 过滤判断 ====================
 
-    private boolean shouldInclude(VectorHit hit, Set<String> candidateIds,
+    private boolean shouldInclude(String episodeId, Set<String> candidateIds,
                                    Map<String, Object> kwargs) {
-        // 如果在结构化过滤中没有通过，排除
-        if (!candidateIds.contains(hit.episodeId)) return false;
+        if (!candidateIds.contains(episodeId)) return false;
 
-        Episode ep = docStore.get(hit.episodeId);
-        if (ep == null) return false;
+        Map<String, String> raw = docStore.getEpisodeRaw(episodeId);
+        if (raw == null) return false;
 
-        // 额外过滤条件
         if (kwargs.containsKey("event_type")) {
+            Map<String, String> ctx = parseContext(raw.get("context"));
             String wanted = kwargs.get("event_type").toString();
-            String actual = ep.context.get("event_type");
+            String actual = ctx.get("event_type");
             if (!wanted.equals(actual)) return false;
         }
 
@@ -241,23 +242,24 @@ public class EpisodicMemory {
 
     // ==================== 辅助 ====================
 
-    private MemoryManager.MemoryItem toMemoryItem(Episode ep) {
-        double importance = toDouble(ep.context.getOrDefault("importance", "0.5"));
+    private MemoryManager.MemoryItem episodeToMemoryItem(Map<String, String> raw) {
+        Map<String, String> ctx = parseContext(raw.get("context"));
+        double importance = toDouble(ctx.getOrDefault("importance", "0.5"));
         return new MemoryManager.MemoryItem(
-                ep.episodeId, ep.content, "episodic", importance,
-                new LinkedHashMap<>(ep.context), ep.timestamp
+                raw.get("episodeId"), raw.get("content"), "episodic", importance,
+                new LinkedHashMap<>(ctx), raw.get("timestamp")
         );
     }
 
-    private double cosineSimilarity(float[] a, float[] b) {
-        double dot = 0, normA = 0, normB = 0;
-        for (int i = 0; i < a.length; i++) {
-            dot += (double) a[i] * b[i];
-            normA += (double) a[i] * a[i];
-            normB += (double) b[i] * b[i];
+    @SuppressWarnings("unchecked")
+    private static Map<String, String> parseContext(String json) {
+        if (json == null || json.isBlank() || "{}".equals(json)) return new LinkedHashMap<>();
+        try {
+            return new com.google.gson.Gson().fromJson(json,
+                    new com.google.gson.reflect.TypeToken<Map<String, String>>(){}.getType());
+        } catch (Exception e) {
+            return new LinkedHashMap<>();
         }
-        double denom = Math.sqrt(normA) * Math.sqrt(normB);
-        return denom == 0 ? 0 : dot / denom;
     }
 
     private static double toDouble(Object v) {
@@ -270,31 +272,46 @@ public class EpisodicMemory {
 
     // ==================== 公开访问器 ====================
 
-    public int size() { return docStore.size(); }
+    public int size() { return docStore.countEpisodes(); }
 
     public List<Episode> getBySession(String sessionId) {
-        List<String> episodeIds = sessions.getOrDefault(sessionId, Collections.emptyList());
-        return episodeIds.stream().map(docStore::get).filter(Objects::nonNull)
-                .collect(Collectors.toList());
+        List<Map<String, String>> raws = docStore.getEpisodesBySession(sessionId);
+        return raws.stream().map(this::rawToEpisode).filter(Objects::nonNull).collect(Collectors.toList());
     }
 
     public List<String> listSessions() {
-        return new ArrayList<>(sessions.keySet());
+        return docStore.listEpisodeSessions();
     }
 
     public void clear() {
-        docStore.clear();
-        sessions.clear();
+        docStore.clearAll();
         vectorStore.clear();
         embedder.reset();
     }
 
+    /** 持久化向量存储 */
+    public void saveVectors() { vectorStore.save(); }
+
+    /** 关闭并释放资源 */
+    public void close() {
+        if (ownDocStore) docStore.close();
+    }
+
+    // ==================== Episode 转换 ====================
+
+    private Episode rawToEpisode(Map<String, String> raw) {
+        if (raw == null) return null;
+        return new Episode(
+                raw.get("episodeId"),
+                raw.get("sessionId"),
+                raw.get("timestamp"),
+                raw.get("content"),
+                parseContext(raw.get("context"))
+        );
+    }
+
     // ==================== 文本嵌入器 ====================
 
-    /**
-     * 轻量级文本嵌入器，基于词汇表 + TF-IDF 权重 + 哈希压缩到固定维度。
-     * 零外部依赖，适合 Java 纯内存场景。
-     */
     public static class TextEmbedder {
         private final int dim;
         private final Map<String, Integer> documentFreq = new HashMap<>();
@@ -304,7 +321,8 @@ public class EpisodicMemory {
             this.dim = dim;
         }
 
-        /** 对文本编码为固定维度向量 */
+        public int getDim() { return dim; }
+
         public float[] encode(String text) {
             float[] vec = new float[dim];
             Map<String, Integer> tf = tokenize(text);
@@ -315,19 +333,15 @@ public class EpisodicMemory {
                 String term = e.getKey();
                 int freq = e.getValue();
                 int df = documentFreq.getOrDefault(term, 1);
-                // ln(1 + totalDocs/(1+df)) 保证平滑：即使所有文档都有该词，IDF 也 > 0
                 double idf = Math.log(1.0 + (double) totalDocs / (1 + df));
                 double weight = freq * idf;
 
-                // 哈希到固定维度（多槽位累加，减少碰撞）
                 int slot = hashToSlot(term) % dim;
                 vec[slot] += (float) weight;
-                // 第二槽位
                 int slot2 = ((slot * 31) + term.length()) % dim;
                 vec[slot2] += (float) weight * 0.5f;
             }
 
-            // L2 归一化
             double norm = 0;
             for (float v : vec) norm += v * v;
             norm = Math.sqrt(norm);
@@ -338,7 +352,6 @@ public class EpisodicMemory {
             return vec;
         }
 
-        /** 注册文档到词汇表（添加记忆时调用） */
         public void register(String text) {
             for (String term : tokenize(text).keySet()) {
                 documentFreq.merge(term, 1, Integer::sum);
@@ -352,7 +365,6 @@ public class EpisodicMemory {
         }
 
         private int hashToSlot(String term) {
-            // 简单但分布均匀的哈希
             int h = 0;
             for (int i = 0; i < term.length(); i++) {
                 h = h * 31 + term.charAt(i);
@@ -360,15 +372,13 @@ public class EpisodicMemory {
             return Math.abs(h);
         }
 
-        // ---- 分词（与 WorkingMemory 一致） ----
-
         private Map<String, Integer> tokenize(String text) {
-            Map<String, Integer> tf = new HashMap<>();
+            Map<String, Integer> tf = new LinkedHashMap<>();
             if (text == null || text.isBlank()) return tf;
 
             String lower = text.toLowerCase();
 
-            // 英文词
+            // 英文词：连续字母/数字序列
             StringBuilder buf = new StringBuilder();
             for (int i = 0; i < lower.length(); i++) {
                 char c = lower.charAt(i);
@@ -383,16 +393,27 @@ public class EpisodicMemory {
             }
             if (buf.length() > 0) tf.merge(buf.toString(), 1, Integer::sum);
 
-            // 中文 bigram
-            StringBuilder cn = new StringBuilder();
-            for (char c : text.toCharArray()) {
-                if (Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN) {
-                    cn.append(c);
+            // 中文：jieba 分词（替代原有 bigram）
+            try {
+                java.util.Map<String, Integer> cnFreq = com.example.agent.nlp.ChineseTokenizer.segmentWithFreq(text);
+                for (java.util.Map.Entry<String, Integer> e : cnFreq.entrySet()) {
+                    tf.merge(e.getKey(), e.getValue(), Integer::sum);
                 }
-            }
-            String ch = cn.toString();
-            for (int i = 0; i < ch.length() - 1; i++) {
-                tf.merge(ch.substring(i, i + 2), 1, Integer::sum);
+            } catch (Exception e) {
+                // jieba 不可用时降级为 unigram + bigram 混合
+                StringBuilder cn = new StringBuilder();
+                for (char c : text.toCharArray()) {
+                    if (Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN) {
+                        cn.append(c);
+                    }
+                }
+                String ch = cn.toString();
+                for (int i = 0; i < ch.length(); i++) {
+                    tf.merge(String.valueOf(ch.charAt(i)), 1, Integer::sum);
+                }
+                for (int i = 0; i < ch.length() - 1; i++) {
+                    tf.merge(ch.substring(i, i + 2), 1, Integer::sum);
+                }
             }
 
             return tf;
@@ -400,15 +421,6 @@ public class EpisodicMemory {
     }
 
     // ==================== 内部类型 ====================
-
-    private static class VectorHit {
-        final String episodeId;
-        final double score;
-        VectorHit(String episodeId, double score) {
-            this.episodeId = episodeId;
-            this.score = score;
-        }
-    }
 
     private static class ScoredItem {
         final double score;

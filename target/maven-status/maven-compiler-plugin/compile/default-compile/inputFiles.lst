@@ -13,8 +13,10 @@ E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\llm\HelloAgentsLLM.
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\llm\MyLLM.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\LoadDotenvUtil.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\Memory.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\memory\BaseMemory.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\memory\EpisodicMemory.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\memory\EpisodicMemoryTest.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\memory\MemoryConfig.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\memory\MemoryManager.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\memory\MemoryTool.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\memory\MemoryToolTest.java
@@ -25,6 +27,7 @@ E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\memory\SemanticMemo
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\memory\WorkingMemory.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\memory\WorkingMemoryTest.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\Message.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\nlp\ChineseTokenizer.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\nlp\EntityRelationExtractor.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\Executor.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\MyPlanAndSolveAgent.java
@@ -45,6 +48,9 @@ E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\rag\DocumentReader.
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\rag\MarkdownChunker.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\rag\RAGTool.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\rag\RAGToolTest.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\store\DocumentStore.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\store\GraphStore.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\store\VectorStore.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\AsyncToolExecutor.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\AsyncToolExecutorTest.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\CalculatorTool.java

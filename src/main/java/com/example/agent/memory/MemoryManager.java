@@ -1,4 +1,6 @@
 package com.example.agent.memory;
+
+import com.example.agent.store.DocumentStore;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
@@ -7,13 +9,11 @@ import java.util.stream.Collectors;
 
 public class MemoryManager {
 
-    // 记忆类型
     public static final String TYPE_WORKING = "working";
     public static final String TYPE_EPISODIC = "episodic";
     public static final String TYPE_SEMANTIC = "semantic";
     public static final String TYPE_PERCEPTUAL = "perceptual";
 
-    // 遗忘策略
     public static final String STRATEGY_IMPORTANCE_BASED = "importance_based";
     public static final String STRATEGY_TIME_BASED = "time_based";
     public static final String STRATEGY_CAPACITY_BASED = "capacity_based";
@@ -39,7 +39,25 @@ public class MemoryManager {
         }
     }
 
-    private final List<MemoryItem> memories = new ArrayList<>();
+    private final DocumentStore docStore;
+    private final boolean ownDocStore;
+
+    // ==================== 构造 ====================
+
+    public MemoryManager() {
+        this(new DocumentStore(":memory:"));
+    }
+
+    public MemoryManager(DocumentStore docStore) {
+        this.docStore = docStore != null ? docStore : new DocumentStore(":memory:");
+        this.ownDocStore = docStore == null;
+    }
+
+    /** 使用文件持久化 */
+    public MemoryManager(String dbPath) {
+        this.docStore = new DocumentStore(dbPath != null ? dbPath : ":memory:");
+        this.ownDocStore = true;
+    }
 
     // ==================== 添加记忆 ====================
 
@@ -53,7 +71,7 @@ public class MemoryManager {
         }
 
         MemoryItem item = new MemoryItem(id, content, memoryType, importance, metadata, now);
-        memories.add(item);
+        docStore.insertMemoryItem(item);
         return id;
     }
 
@@ -75,11 +93,13 @@ public class MemoryManager {
 
     public List<MemoryItem> retrieveMemories(String query, int limit,
                                              List<String> memoryTypes, double minImportance) {
-        // 类型过滤条件
         boolean typeFilterActive = memoryTypes != null && !memoryTypes.isEmpty();
 
+        // 获取所有记忆，在内存中过滤排序
+        List<MemoryItem> all = docStore.getAllMemoryItems();
+
         if (query == null || query.isBlank()) {
-            return memories.stream()
+            return all.stream()
                     .filter(m -> m.importance >= minImportance)
                     .filter(m -> !typeFilterActive || memoryTypes.contains(m.memoryType))
                     .sorted(Comparator.comparingDouble((MemoryItem m) -> m.importance).reversed())
@@ -89,7 +109,7 @@ public class MemoryManager {
 
         String[] keywords = query.toLowerCase().split("\\s+");
 
-        return memories.stream()
+        return all.stream()
                 .filter(m -> m.importance >= minImportance)
                 .filter(m -> !typeFilterActive || memoryTypes.contains(m.memoryType))
                 .map(m -> new AbstractMap.SimpleEntry<>(m, keywordScore(m, keywords)))
@@ -113,78 +133,41 @@ public class MemoryManager {
     // ==================== 单条操作 ====================
 
     public MemoryItem getMemory(String id) {
-        // 先精确匹配，再前缀匹配
-        MemoryItem exact = memories.stream().filter(m -> m.id.equals(id)).findFirst().orElse(null);
-        if (exact != null) return exact;
-        return memories.stream().filter(m -> m.id.startsWith(id)).findFirst().orElse(null);
+        return docStore.getMemoryItem(id);
     }
 
     public boolean updateMemory(String id, String content, Double importance, Map<String, String> metadata) {
-        MemoryItem item = getMemory(id);
-        if (item == null) return false;
-        if (content != null) item.content = content;
-        if (importance != null) item.importance = Math.max(0.0, Math.min(1.0, importance));
-        if (metadata != null) item.metadata.putAll(metadata);
-        item.updatedAt = now();
-        return true;
+        return docStore.updateMemoryItem(id, content, importance, metadata);
     }
 
     public boolean removeMemory(String id) {
-        // 先精确匹配，再前缀匹配
-        boolean removed = memories.removeIf(m -> m.id.equals(id));
-        if (!removed) {
-            removed = memories.removeIf(m -> m.id.startsWith(id));
-        }
-        return removed;
+        return docStore.deleteMemoryItem(id);
     }
 
     // ==================== 遗忘策略 ====================
 
     public int forgetMemories(String strategy, double threshold, int maxAgeDays) {
-        int before = memories.size();
-
-        switch (strategy) {
-            case STRATEGY_IMPORTANCE_BASED:
-                memories.removeIf(m -> m.importance < threshold);
-                break;
-
-            case STRATEGY_TIME_BASED:
-                LocalDateTime cutoff = LocalDateTime.now().minus(maxAgeDays, ChronoUnit.DAYS);
-                memories.removeIf(m -> {
-                    try {
-                        LocalDateTime created = LocalDateTime.parse(m.createdAt, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-                        return created.isBefore(cutoff);
-                    } catch (Exception e) {
-                        return false;
-                    }
-                });
-                break;
-
-            case STRATEGY_CAPACITY_BASED:
-                int maxCapacity = (int) threshold;
-                if (maxCapacity > 0 && memories.size() > maxCapacity) {
-                    memories.sort(Comparator.comparingDouble(m -> m.importance));
-                    int toRemove = memories.size() - maxCapacity;
-                    memories.subList(0, toRemove).clear();
-                }
-                break;
-
-            default:
-                return 0;
-        }
-
-        return before - memories.size();
+        return docStore.deleteMemoryItems(strategy, threshold, maxAgeDays);
     }
 
     // ==================== 整合记忆 ====================
 
     public int consolidateMemories(String fromType, String toType, double importanceThreshold) {
         int count = 0;
-        for (MemoryItem item : memories) {
+        List<MemoryItem> all = docStore.getAllMemoryItems();
+        String now = now();
+        for (MemoryItem item : all) {
             if (item.memoryType.equals(fromType) && item.importance >= importanceThreshold) {
-                item.memoryType = toType;
-                item.updatedAt = now();
-                count++;
+                Map<String, String> meta = new LinkedHashMap<>(item.metadata);
+                docStore.updateMemoryItem(item.id, null, null, meta);
+                // 通过直接修改+重新插入更新类型
+                MemoryItem updated = docStore.getMemoryItem(item.id);
+                if (updated != null) {
+                    updated.memoryType = toType;
+                    updated.updatedAt = now;
+                    docStore.insertMemoryItem(updated);
+                    count++;
+                }
             }
         }
         return count;
@@ -193,33 +176,32 @@ public class MemoryManager {
     // ==================== 清空与统计 ====================
 
     public int clearAll() {
-        int count = memories.size();
-        memories.clear();
+        int count = docStore.countMemoryItems();
+        docStore.clearAll();
         return count;
     }
 
     public int totalCount() {
-        return memories.size();
+        return docStore.countMemoryItems();
     }
 
     public Map<String, Long> countByType() {
-        return memories.stream()
-                .collect(Collectors.groupingBy(m -> m.memoryType, LinkedHashMap::new, Collectors.counting()));
+        return docStore.countMemoryItemsByType();
     }
 
     public double averageImportance() {
-        return memories.stream().mapToDouble(m -> m.importance).average().orElse(0);
+        return docStore.averageImportance();
     }
 
     // ==================== 摘要 ====================
 
     public String getSummary() {
-        int total = memories.size();
+        List<MemoryItem> all = docStore.getAllMemoryItems();
+        int total = all.size();
         if (total == 0) return "📝 暂无记忆";
 
         Map<String, Long> byType = countByType();
         double avgImp = averageImportance();
-
         Map<String, String> labels = typeLabels();
 
         StringBuilder sb = new StringBuilder();
@@ -234,7 +216,7 @@ public class MemoryManager {
         }
 
         sb.append("  最近记忆:\n");
-        memories.stream()
+        all.stream()
                 .sorted((a, b) -> b.createdAt.compareTo(a.createdAt))
                 .limit(3)
                 .forEach(m -> {
@@ -255,7 +237,18 @@ public class MemoryManager {
         );
     }
 
+    // ==================== 辅助 ====================
+
     private static String now() {
         return LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+    }
+
+    /** 获取底层 DocumentStore（用于传递给其他组件共享数据库） */
+    public DocumentStore getDocumentStore() {
+        return docStore;
+    }
+
+    public void close() {
+        if (ownDocStore) docStore.close();
     }
 }

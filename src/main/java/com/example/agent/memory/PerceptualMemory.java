@@ -1,4 +1,7 @@
 package com.example.agent.memory;
+
+import com.example.agent.store.DocumentStore;
+import com.example.agent.store.VectorStore;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
@@ -6,16 +9,10 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * 感知记忆实现
- *
- * 特点：
- * - 支持多模态（文本/图像/音频），按模态分离向量存储
- * - 同模态向量检索 + 时间/重要性融合排序
- * - 评分: (vec×0.8 + recency×0.2) × importanceWeight
+ * 感知记忆实现 — 使用 VectorStore + DocumentStore 作为存储后端。
+ * 支持多模态（文本/图像/音频），按模态分离向量存储。
  */
-public class PerceptualMemory {
-
-    // ==================== 模态常量 ====================
+public class PerceptualMemory implements BaseMemory {
 
     public static final String MOD_TEXT = "text";
     public static final String MOD_IMAGE = "image";
@@ -28,15 +25,10 @@ public class PerceptualMemory {
 
     // ==================== 存储层 ====================
 
-    // 按模态分离的向量存储: modality → (memoryId → vector)
-    private final Map<String, Map<String, float[]>> vectorStores = new LinkedHashMap<>();
-
-    // 记忆缓存
-    private final Map<String, MemoryManager.MemoryItem> memoryStore = new LinkedHashMap<>();
-
-    // 文本嵌入器
+    private final Map<String, VectorStore> vectorStores = new LinkedHashMap<>();
+    private final DocumentStore docStore;
+    private final boolean ownDocStore;
     private final EpisodicMemory.TextEmbedder textEmbedder;
-
     private final int imageDim;
     private final int audioDim;
 
@@ -47,12 +39,28 @@ public class PerceptualMemory {
     }
 
     public PerceptualMemory(int textDim, int imageDim, int audioDim) {
+        this(textDim, imageDim, audioDim, null, null, null, null);
+    }
+
+    public PerceptualMemory(MemoryConfig config) {
+        this(config.perceptualTextDim, config.perceptualImageDim, config.perceptualAudioDim,
+                null, null, null, null);
+    }
+
+    /** 使用外部存储后端（持久化）。传 null 则使用默认内存存储 */
+    public PerceptualMemory(int textDim, int imageDim, int audioDim,
+                            DocumentStore docStore,
+                            VectorStore textVecStore, VectorStore imageVecStore, VectorStore audioVecStore) {
         this.textEmbedder = new EpisodicMemory.TextEmbedder(textDim);
         this.imageDim = imageDim;
         this.audioDim = audioDim;
-        for (String mod : ALL_MODALITIES) {
-            vectorStores.put(mod, new LinkedHashMap<>());
-        }
+
+        this.docStore = docStore != null ? docStore : new DocumentStore(":memory:");
+        this.ownDocStore = docStore == null;
+
+        this.vectorStores.put(MOD_TEXT, textVecStore != null ? textVecStore : new VectorStore(textDim));
+        this.vectorStores.put(MOD_IMAGE, imageVecStore != null ? imageVecStore : new VectorStore(imageDim));
+        this.vectorStores.put(MOD_AUDIO, audioVecStore != null ? audioVecStore : new VectorStore(audioDim));
     }
 
     // ==================== 添加 ====================
@@ -61,7 +69,6 @@ public class PerceptualMemory {
         String modality = item.metadata.getOrDefault("modality", MOD_TEXT);
         String filePath = item.metadata.getOrDefault("raw_data", null);
 
-        // 如果指定了 filePath 但未指定 modality，从文件扩展名推断
         if (filePath != null && !item.metadata.containsKey("modality")) {
             modality = inferModality(filePath);
         }
@@ -81,8 +88,8 @@ public class PerceptualMemory {
                 break;
         }
 
-        vectorStores.get(modality).put(item.id, vector);
-        memoryStore.put(item.id, item);
+        vectorStores.get(modality).add(item.id, vector);
+        docStore.insertMemoryItem(item);
         return item.id;
     }
 
@@ -94,41 +101,32 @@ public class PerceptualMemory {
         String queryModality = kwargs != null ? (String) kwargs.get("query_modality") : null;
         if (queryModality == null) queryModality = targetModality != null ? targetModality : MOD_TEXT;
 
-        // 确定查询向量所属的存储
         String searchModality = targetModality != null ? targetModality : queryModality;
-        Map<String, float[]> store = vectorStores.getOrDefault(searchModality, Collections.emptyMap());
+        VectorStore store = vectorStores.getOrDefault(searchModality, vectorStores.get(MOD_TEXT));
 
-        // 同模态向量检索
         float[] queryVector = encodeData(query, queryModality);
-        List<VectorHit> hits = new ArrayList<>();
-        for (Map.Entry<String, float[]> entry : store.entrySet()) {
-            MemoryManager.MemoryItem item = memoryStore.get(entry.getKey());
+        List<VectorStore.VectorHit> hits = store.search(queryVector, limit * 5);
+
+        // 过滤
+        List<VectorStore.VectorHit> filteredHits = new ArrayList<>();
+        for (VectorStore.VectorHit hit : hits) {
+            MemoryManager.MemoryItem item = docStore.getMemoryItem(hit.id);
             if (item == null) continue;
 
-            // userId 过滤
             if (userId != null && !userId.equals(item.metadata.get("user_id"))) continue;
 
-            // target_modality 二次过滤
             if (targetModality != null) {
                 String itemModality = item.metadata.getOrDefault("modality", MOD_TEXT);
                 if (!targetModality.equals(itemModality)) continue;
             }
 
-            double sim = cosine(queryVector, entry.getValue());
-            if (sim > 0) {
-                hits.add(new VectorHit(entry.getKey(), sim));
-            }
+            filteredHits.add(hit);
         }
-
-        hits.sort((a, b) -> Double.compare(b.score, a.score));
-        int topK = Math.min(limit * 5, hits.size());
-        if (topK == 0) return Collections.emptyList();
-        hits = hits.subList(0, topK);
 
         // 融合排序
         List<ScoredItem> results = new ArrayList<>();
-        for (VectorHit hit : hits) {
-            MemoryManager.MemoryItem item = memoryStore.get(hit.memoryId);
+        for (VectorStore.VectorHit hit : filteredHits) {
+            MemoryManager.MemoryItem item = docStore.getMemoryItem(hit.id);
             if (item == null) continue;
 
             double vectorScore = hit.score;
@@ -164,32 +162,22 @@ public class PerceptualMemory {
         }
     }
 
-    /**
-     * 图像编码（占位实现：从路径/内容生成确定性向量）。
-     * 生产环境可替换为 CLIP 模型调用。
-     */
     private float[] encodeImage(String input) {
         float[] vec = new float[imageDim];
         fillFromHash(vec, "img:" + input);
         return normalize(vec);
     }
 
-    /**
-     * 音频编码（占位实现：从路径/内容生成确定性向量）。
-     * 生产环境可替换为 CLAP 模型调用。
-     */
     private float[] encodeAudio(String input) {
         float[] vec = new float[audioDim];
         fillFromHash(vec, "aud:" + input);
         return normalize(vec);
     }
 
-    /** 从字符串哈希生成向量的各维值（确定性，相同输入总产出相同向量） */
     private static void fillFromHash(float[] vec, String seed) {
         int h = seed.hashCode();
         Random rng = new Random(h);
         for (int i = 0; i < vec.length; i++) {
-            // 多轮哈希减少相邻维度的相关性
             rng = new Random(rng.nextLong());
             vec[i] = (float) (rng.nextGaussian());
         }
@@ -229,50 +217,40 @@ public class PerceptualMemory {
         return MOD_TEXT;
     }
 
-    // ==================== 向量工具 ====================
-
-    private double cosine(float[] a, float[] b) {
-        double dot = 0, normA = 0, normB = 0;
-        for (int i = 0; i < a.length; i++) {
-            dot += (double) a[i] * b[i];
-            normA += (double) a[i] * a[i];
-            normB += (double) b[i] * b[i];
-        }
-        double denom = Math.sqrt(normA) * Math.sqrt(normB);
-        return denom == 0 ? 0 : dot / denom;
-    }
-
     // ==================== 公开访问器 ====================
 
-    public int size() { return memoryStore.size(); }
+    public int size() { return docStore.countMemoryItems(); }
 
     public int sizeByModality(String modality) {
-        Map<String, float[]> store = vectorStores.get(modality);
+        VectorStore store = vectorStores.get(modality);
         return store != null ? store.size() : 0;
     }
 
     public Map<String, Integer> modalityCounts() {
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (String mod : ALL_MODALITIES) {
-            int c = vectorStores.getOrDefault(mod, Collections.emptyMap()).size();
+            int c = vectorStores.getOrDefault(mod, new VectorStore(0)).size();
             if (c > 0) counts.put(mod, c);
         }
         return counts;
     }
 
     public void clear() {
-        for (Map<String, float[]> store : vectorStores.values()) store.clear();
-        memoryStore.clear();
+        for (VectorStore store : vectorStores.values()) store.clear();
+        docStore.clearAll();
         textEmbedder.reset();
     }
 
-    // ==================== 内部类型 ====================
-
-    private static class VectorHit {
-        final String memoryId;
-        final double score;
-        VectorHit(String memoryId, double score) { this.memoryId = memoryId; this.score = score; }
+    /** 持久化所有向量存储 */
+    public void save() {
+        for (VectorStore vs : vectorStores.values()) vs.save();
     }
+
+    public void close() {
+        if (ownDocStore) docStore.close();
+    }
+
+    // ==================== 内部类型 ====================
 
     private static class ScoredItem {
         final double score;

@@ -5,7 +5,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class WorkingMemory {
+public class WorkingMemory implements BaseMemory {
 
     // 配置
     private final int maxCapacity;
@@ -24,12 +24,17 @@ public class WorkingMemory {
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     public WorkingMemory() {
-        this(50, 60);
+        this(MemoryConfig.defaults());
     }
 
     public WorkingMemory(int maxCapacity, int maxAgeMinutes) {
         this.maxCapacity = maxCapacity;
         this.maxAgeMinutes = maxAgeMinutes;
+    }
+
+    public WorkingMemory(MemoryConfig config) {
+        this.maxCapacity = config.workingMaxCapacity;
+        this.maxAgeMinutes = config.workingMaxAgeMinutes;
     }
 
     // ==================== 添加 ====================
@@ -48,6 +53,12 @@ public class WorkingMemory {
 
     // ==================== 检索 ====================
 
+    @Override
+    public List<MemoryManager.MemoryItem> retrieve(String query, int limit, Map<String, Object> kwargs) {
+        return retrieve(query, limit);
+    }
+
+    @Override
     public List<MemoryManager.MemoryItem> retrieve(String query, int limit) {
         expireOldMemories();
 
@@ -180,9 +191,9 @@ public class WorkingMemory {
         return vec;
     }
 
-    /** 分词：混合中英文（空格切词 + 中文2-gram） */
+    /** 分词：英文连续字母/数字 + jieba 中文分词 */
     private Map<String, Integer> termFrequency(String text) {
-        Map<String, Integer> tf = new HashMap<>();
+        Map<String, Integer> tf = new LinkedHashMap<>();
         if (text == null || text.isBlank()) return tf;
 
         String lower = text.toLowerCase();
@@ -204,16 +215,27 @@ public class WorkingMemory {
             tf.merge(wordBuf.toString(), 1, Integer::sum);
         }
 
-        // 中文：字符级 bigram
-        StringBuilder chinese = new StringBuilder();
-        for (char c : text.toCharArray()) {
-            if (Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN) {
-                chinese.append(c);
+        // 中文：jieba 分词（替代原有 bigram）
+        try {
+            Map<String, Integer> cnFreq = com.example.agent.nlp.ChineseTokenizer.segmentWithFreq(text);
+            for (Map.Entry<String, Integer> e : cnFreq.entrySet()) {
+                tf.merge(e.getKey(), e.getValue(), Integer::sum);
             }
-        }
-        String ch = chinese.toString();
-        for (int i = 0; i < ch.length() - 1; i++) {
-            tf.merge(ch.substring(i, i + 2), 1, Integer::sum);
+        } catch (Exception e) {
+            // jieba 不可用时降级为 unigram + bigram 混合
+            StringBuilder chinese = new StringBuilder();
+            for (char c : text.toCharArray()) {
+                if (Character.UnicodeScript.of(c) == Character.UnicodeScript.HAN) {
+                    chinese.append(c);
+                }
+            }
+            String ch = chinese.toString();
+            for (int i = 0; i < ch.length(); i++) {
+                tf.merge(String.valueOf(ch.charAt(i)), 1, Integer::sum);
+            }
+            for (int i = 0; i < ch.length() - 1; i++) {
+                tf.merge(ch.substring(i, i + 2), 1, Integer::sum);
+            }
         }
 
         return tf;
