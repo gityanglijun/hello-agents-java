@@ -1,3 +1,5 @@
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -13,6 +15,7 @@ public class MemoryToolTest {
         testClearAll();
         testToolFrameworkIntegration();
         testConvenienceExecute();
+        testNlpEnhancedSearch();
     }
 
     // ==================== 操作1: add - 四种记忆类型 ====================
@@ -336,6 +339,128 @@ public class MemoryToolTest {
         System.out.println();
     }
 
+    // ==================== NLP增强检索测试 ====================
+
+    static void testNlpEnhancedSearch() {
+        System.out.println("==========================================");
+        System.out.println("测试 NLP增强检索（EntityRelationExtractor）");
+        System.out.println("==========================================\n");
+
+        // 直接用 SemanticMemory 以获得实体/关系统计访问权限
+        SemanticMemory semMem = new SemanticMemory(128);
+
+        // 构建知识库（模拟真实技术文档）
+        String[][] docs = {
+            {"Python简介",
+             "Python是一种解释型编程语言，由Guido van Rossum于1991年创建。"
+             + "它以简洁易读著称，支持面向对象和函数式编程。"
+             + "Python广泛应用于机器学习、数据科学和Web开发领域。"},
+
+            {"Java与Spring生态",
+             "Java是一种编译型语言，运行在JVM上。它由Sun Microsystems于1995年推出。"
+             + "Spring是Java生态的核心框架，Spring Boot简化了微服务开发。"
+             + "开发者使用Maven管理依赖，使用Docker部署应用。"},
+
+            {"数据库与中间件",
+             "PostgreSQL是一个关系型数据库，Redis是一个高性能缓存数据库。"
+             + "MySQL广泛用于Web应用，Elasticsearch用于全文搜索。"
+             + "Docker和Kubernetes构成现代云原生架构的基础。"},
+
+            {"深度学习框架",
+             "TensorFlow和PyTorch是两个主流的深度学习框架。"
+             + "它们都支持GPU加速和自动微分。"
+             + "Keras提供了更高层的API，Scikit-learn适用于传统机器学习。"},
+
+            {"Python高级特性",
+             "Python装饰器可以在不修改原函数的情况下增加功能。"
+             + "Python生成器使用yield关键字实现惰性求值。"
+             + "Python上下文管理器使用with语句管理资源。"},
+        };
+
+        // 添加到语义记忆
+        for (int i = 0; i < docs.length; i++) {
+            MemoryManager.MemoryItem item = new MemoryManager.MemoryItem(
+                    "nlp-doc-" + i, docs[i][1], MemoryManager.TYPE_SEMANTIC,
+                    0.8, null, java.time.Instant.now().toString());
+            semMem.add(item);
+        }
+
+        // === 子测试1: 实体提取数量与类型 ===
+        System.out.println("--- 1. 知识库统计 ---");
+        System.out.println("记忆数: " + semMem.size());
+        System.out.println("实体数: " + semMem.entityCount());
+        System.out.println("关系数: " + semMem.relationCount());
+        System.out.println("实体词典容量: " + EntityRelationExtractor.dictSize() + " 条目\n");
+
+        // === 子测试2: 提取的实体列表 ===
+        System.out.println("--- 2. 已提取实体（按类型分组） ---");
+        Map<String, List<String>> byType = new LinkedHashMap<>();
+        for (SemanticMemory.Entity e : semMem.getAllEntities()) {
+            byType.computeIfAbsent(e.type, k -> new ArrayList<>()).add(e.name);
+        }
+        for (Map.Entry<String, List<String>> entry : byType.entrySet()) {
+            System.out.println("  [" + entry.getKey() + "] " + entry.getValue());
+        }
+
+        // === 子测试3: 图检索（不同查询角度） ===
+        System.out.println("\n--- 3. 图检索对比 ---");
+
+        // 3a: 语言 + 框架查询
+        System.out.println(">>> 查询: 'Python 深度学习 框架'");
+        List<MemoryManager.MemoryItem> r1 = semMem.retrieve("Python 深度学习 框架", 3);
+        for (MemoryManager.MemoryItem r : r1) {
+            System.out.println("  " + r.id + ": " + truncate(r.content, 70));
+        }
+
+        // 3b: 工具/容器查询
+        System.out.println("\n>>> 查询: 'Docker 容器 部署'");
+        List<MemoryManager.MemoryItem> r2 = semMem.retrieve("Docker 容器 部署", 3);
+        for (MemoryManager.MemoryItem r : r2) {
+            System.out.println("  " + r.id + ": " + truncate(r.content, 70));
+        }
+
+        // 3c: 数据库查询
+        System.out.println("\n>>> 查询: '关系型数据库 缓存'");
+        List<MemoryManager.MemoryItem> r3 = semMem.retrieve("关系型数据库 缓存", 3);
+        for (MemoryManager.MemoryItem r : r3) {
+            System.out.println("  " + r.id + ": " + truncate(r.content, 70));
+        }
+
+        // 3d: 跨领域查询（Python + 数据库）
+        System.out.println("\n>>> 查询: 'Python Web开发 数据库 MySQL'");
+        List<MemoryManager.MemoryItem> r4 = semMem.retrieve("Python Web开发 数据库 MySQL", 3);
+        for (MemoryManager.MemoryItem r : r4) {
+            System.out.println("  " + r.id + ": " + truncate(r.content, 70));
+        }
+
+        // === 子测试4: 通过 MemoryTool 执行（集成验证） ===
+        System.out.println("\n--- 4. MemoryTool 集成 ---");
+        MemoryTool tool = new MemoryTool();
+        tool.execute("add", Map.of(
+                "content", "RAG（检索增强生成）结合了信息检索和文本生成。"
+                        + "它使用向量数据库存储文档嵌入，通过语义搜索找到相关片段，"
+                        + "然后交给大语言模型生成回答。",
+                "memory_type", "semantic",
+                "importance", 0.9));
+
+        // 通过 tool 检索语义记忆
+        String searchResult = tool.execute("search", Map.of(
+                "query", "RAG 向量数据库 语义搜索",
+                "memory_types", List.of("semantic"),
+                "limit", 2));
+        System.out.println(searchResult);
+
+        // === 子测试5: 无 OpenNLP 模型的降级信息 ===
+        System.out.println("--- 5. 当前工作模式 ---");
+        System.out.println("OpenNLP 模型: " + (new java.io.File("models/opennlp").isDirectory()
+                ? "目录存在（若模型齐全则启用 NER）" : "未安装（使用增强词典 150+ 条目）"));
+        System.out.println("实体类型覆盖: " + EntityRelationExtractor.entityTypes());
+        System.out.println();
+
+        // 清理
+        semMem.clear();
+    }
+
     // ==================== 辅助方法 ====================
 
     private static String extractId(String result) {
@@ -349,5 +474,9 @@ public class MemoryToolTest {
 
     private static int memoryCount(MemoryTool tool) {
         return tool.getMemoryManager().totalCount();
+    }
+
+    private static String truncate(String s, int maxLen) {
+        return s.length() <= maxLen ? s : s.substring(0, maxLen) + "...";
     }
 }

@@ -68,6 +68,9 @@ public class SemanticMemory {
     // 嵌入器
     private final EpisodicMemory.TextEmbedder embedder;
 
+    // 实体/关系提取器
+    private final EntityRelationExtractor extractor = new EntityRelationExtractor();
+
     // ==================== 构造 ====================
 
     public SemanticMemory() {
@@ -274,114 +277,16 @@ public class SemanticMemory {
 
     // ==================== 实体提取 ====================
 
-    /**
-     * 基于规则的实体提取（零外部依赖）：
-     * - 英文大写词 → 技术名词
-     * - 已知中文术语匹配
-     * - 从混合 token 中提取纯 ASCII 前缀
-     */
+    /** 实体提取（委托给 EntityRelationExtractor） */
     private List<Entity> extractEntities(String text) {
-        List<Entity> result = new ArrayList<>();
-        if (text == null || text.isBlank()) return result;
-
-        // 英文大写词：逐 token 拆分，忽略中文混合部分
-        String[] words = text.split("[\\s，。！？、；：（）\\.!?,;:()]+");
-        for (String w : words) {
-            if (w.isEmpty()) continue;
-            // 提取 token 中的纯 ASCII 前缀（如 "Python是一种" → "Python"）
-            String asciiPrefix = extractAsciiPrefix(w);
-            if (asciiPrefix.length() >= 2 && Character.isUpperCase(asciiPrefix.charAt(0))) {
-                if (findEntityByName(asciiPrefix, "concept") == null
-                        && findEntityByName(asciiPrefix, "language") == null) {
-                    result.add(new Entity(UUID.randomUUID().toString(), asciiPrefix, "concept"));
-                }
-            }
-        }
-
-        // 中文关键词匹配：编程语言、框架、工具名等
-        Map<String, String> knownTerms = new LinkedHashMap<>();
-        knownTerms.put("Python", "language");
-        knownTerms.put("Java", "language");
-        knownTerms.put("面向对象", "paradigm");
-        knownTerms.put("函数式", "paradigm");
-        knownTerms.put("机器学习", "field");
-        knownTerms.put("深度学习", "field");
-        knownTerms.put("数据库", "tool");
-        knownTerms.put("API", "tool");
-        knownTerms.put("框架", "concept");
-
-        String lower = text.toLowerCase();
-        for (Map.Entry<String, String> term : knownTerms.entrySet()) {
-            if (lower.contains(term.getKey().toLowerCase())
-                    && findEntityByName(term.getKey(), term.getValue()) == null) {
-                result.add(new Entity(
-                        UUID.randomUUID().toString(), term.getKey(), term.getValue()));
-            }
-        }
-
-        return result;
+        return extractor.extractEntities(text);
     }
 
     // ==================== 关系提取 ====================
 
-    /**
-     * 关系提取：当两个实体在同一句话或相邻句中时建立关系。
-     * 谓语通过关键词推断。
-     */
+    /** 关系提取（委托给 EntityRelationExtractor） */
     private List<Relation> extractRelations(String text, List<Entity> textEntities, String memoryId) {
-        List<Relation> result = new ArrayList<>();
-        if (textEntities.size() < 2) return result;
-
-        // 简单共现：同一段文本中的实体两两建立 IS_RELATED_TO 关系
-        for (int i = 0; i < textEntities.size(); i++) {
-            for (int j = i + 1; j < textEntities.size(); j++) {
-                Entity a = textEntities.get(i), b = textEntities.get(j);
-                if (a.name.equals(b.name)) continue;
-
-                String predicate = inferPredicate(text, a.name, b.name);
-
-                // 去重
-                boolean exists = relations.stream().anyMatch(r ->
-                        r.subjectId.equals(a.entityId) && r.objectId.equals(b.entityId)
-                                && r.predicate.equals(predicate));
-                if (!exists) {
-                    result.add(new Relation(
-                            UUID.randomUUID().toString(),
-                            a.entityId, predicate, b.entityId, memoryId));
-                }
-            }
-        }
-        return result;
-    }
-
-    private String inferPredicate(String text, String entityA, String entityB) {
-        String lower = text.toLowerCase();
-        // 包含/属于关系
-        if (lower.contains(entityA.toLowerCase() + "是") || lower.contains(entityA.toLowerCase() + "是一种")) {
-            return "IS_A";
-        }
-        // 使用/依赖关系
-        if (lower.contains("使用") || lower.contains("基于") || lower.contains("采用")) {
-            return "USES";
-        }
-        // 对比关系
-        if (lower.contains("对比") || lower.contains("vs") || lower.contains("和") || lower.contains("与")) {
-            return "RELATED_TO";
-        }
-        return "CO_OCCURS_WITH";
-    }
-
-    /** 从混合 token（如 "Python是一种"）中提取纯 ASCII 前缀 */
-    private String extractAsciiPrefix(String token) {
-        StringBuilder sb = new StringBuilder();
-        for (char c : token.toCharArray()) {
-            if (c >= 0x20 && c <= 0x7E) {  // printable ASCII
-                sb.append(c);
-            } else {
-                break;  // 遇到第一个非 ASCII 字符就截断
-            }
-        }
-        return sb.toString();
+        return extractor.extractRelations(text, textEntities, memoryId);
     }
 
     // ==================== 实体查找 ====================

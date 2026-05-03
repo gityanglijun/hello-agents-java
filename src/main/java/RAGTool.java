@@ -272,9 +272,20 @@ public class RAGTool extends Tool {
 
             int topK = getInt(params, "top_k", 5);
             boolean enableLLM = getBool(params, "enable_llm", true);
+            boolean enableAdvanced = getBool(params, "enable_advanced_search", false);
+            boolean enableMqe = getBool(params, "enable_mqe", false);
+            boolean enableHyde = getBool(params, "enable_hyde", false);
 
-            // 1. 检索相关片段
-            List<ChunkHit> hits = retrieveChunks(query, topK);
+            // 1. 检索相关片段（高级检索 OR 简单检索）
+            List<ChunkHit> hits;
+            if (enableAdvanced && initLLM()) {
+                hits = searchVectorsExpanded(query, topK,
+                        enableMqe, getInt(params, "mqe_expansions", 3),
+                        enableHyde, getInt(params, "candidate_pool_multiplier", 5),
+                        null);
+            } else {
+                hits = retrieveChunks(query, topK);
+            }
             if (hits.isEmpty()) return "🔍 未找到与问题相关的知识";
 
             // 2. 构建上下文
@@ -283,7 +294,11 @@ public class RAGTool extends Tool {
             for (int i = 0; i < hits.size(); i++) {
                 Chunk chunk = hits.get(i).chunk;
                 Document doc = documents.get(chunk.docId);
-                context.append("【来源").append(i + 1).append("】").append(chunk.content).append("\n");
+                context.append("【来源").append(i + 1).append("】");
+                if (chunk.headingPath != null) {
+                    context.append(" [章节: ").append(chunk.headingPath).append("]");
+                }
+                context.append("\n").append(chunk.content).append("\n");
                 if (doc != null) {
                     sources.add("来源" + (i + 1) + ": " + doc.title);
                 }
@@ -424,14 +439,18 @@ public class RAGTool extends Tool {
     }
 
     private String buildRAGPrompt(String question, String context) {
-        return "你是一个知识库助手。请**仅根据**以下参考资料回答用户的问题。\n"
-                + "如果参考资料中没有相关信息，请明确说明「无法从现有资料中找到答案」。\n"
-                + "不要编造信息，引用时注明来源编号。\n\n"
+        return "你是一个严谨的知识库助手。请严格遵守以下规则：\n"
+                + "1. 只根据下方参考资料中的内容回答，不得使用你自己的知识\n"
+                + "2. 回答必须引用具体的来源编号，如「[来源1]」\n"
+                + "3. 如果参考资料中有明确的定义、概念或事实，直接引用原文\n"
+                + "4. 如果资料中只涉及部分内容，明确说明哪些来自资料、哪些资料未覆盖\n"
+                + "5. 如果资料完全不涉及该问题，回答「参考资料中未直接涉及该问题」\n"
+                + "6. 不要编造、推测或补充资料中没有的信息\n\n"
                 + "=== 参考资料 ===\n"
                 + context + "\n"
                 + "=== 用户问题 ===\n"
                 + question + "\n\n"
-                + "请用简洁清晰的中文回答：";
+                + "请严格基于资料回答：";
     }
 
     private String callLLM(String prompt) {

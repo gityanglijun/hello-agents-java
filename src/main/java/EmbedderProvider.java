@@ -4,22 +4,29 @@ import java.util.regex.Pattern;
 /**
  * 统一嵌入接口，支持多后端自动降级。
  *
- * 降级链: 百炼 API → 本地 TF-IDF
- * 未来可扩展: HuggingFace 本地模型（DJL）、Ollama 等
+ * 降级链: BGE 本地 ONNX → LLM Embedding API → 百炼 API → 本地 TF-IDF
+ * BGE 免费、中文最优、完全离线，是默认推荐方案。
  */
 public class EmbedderProvider {
 
     // 后端标识
-    public enum Backend { BAILIAN, TFIDF, NONE }
+    public enum Backend { BGE, LLM_EMBED, BAILIAN, TFIDF, NONE }
 
-    // 默认向量维度（百炼 text-embedding-v2 = 1536，本地 TF-IDF 可配置）
+    // 默认向量维度
     public static final int BAILIAN_DIM = 1536;
+    public static final int BGE_DIM = 512;  // bge-small-zh，实际维度自动检测
+    public static final int GENERIC_EMBED_DIM = 1536;
     private final int tfidfDim;
 
+    private BGEOnnxEmbedding bgeClient;
+    private LLMEmbeddingClient llmEmbedClient;
     private BailianEmbeddingClient bailianClient;
     private EpisodicMemory.TextEmbedder tfidfEmbedder;
     private Backend activeBackend = Backend.NONE;
+    private int activeDim = 256;
 
+    private boolean bgeTried;
+    private boolean llmEmbedTried;
     private boolean bailianTried;
 
     // ==================== 构造 ====================
@@ -30,6 +37,7 @@ public class EmbedderProvider {
 
     public EmbedderProvider(int tfidfDim) {
         this.tfidfDim = tfidfDim;
+        this.activeDim = tfidfDim;
     }
 
     // ==================== 嵌入接口 ====================
@@ -44,25 +52,54 @@ public class EmbedderProvider {
     public List<float[]> encodeBatch(List<String> texts) {
         if (texts == null || texts.isEmpty()) return Collections.emptyList();
 
-        // 1. 尝试百炼 API
+        // 1. 尝试 BGE 本地 ONNX 模型（免费 + 中文最优 + 离线）
+        if (activeBackend == Backend.NONE && !bgeTried) {
+            tryBGE();
+        }
+        if (activeBackend == Backend.BGE && bgeClient != null) {
+            try {
+                List<float[]> results = bgeClient.encodeBatch(texts);
+                if (!results.isEmpty()) return results;
+            } catch (Exception e) {
+                System.out.println("[Embedder] BGE 推理失败: " + e.getMessage());
+            }
+            System.out.println("[Embedder] BGE 失败，降级到 LLM Embedding API");
+            activeBackend = Backend.NONE;
+            activeDim = tfidfDim;
+        }
+
+        // 2. 尝试 LLM 提供商 Embedding API（复用 LLM_API_KEY/LLM_BASE_URL）
+        if (activeBackend == Backend.NONE && !llmEmbedTried) {
+            tryLLMEmbed();
+        }
+        if (activeBackend == Backend.LLM_EMBED && llmEmbedClient != null) {
+            List<float[]> results = llmEmbedClient.encode(texts);
+            if (!results.isEmpty()) return results;
+            System.out.println("[Embedder] LLM Embedding API 失败，降级到百炼");
+            activeBackend = Backend.NONE;
+            activeDim = tfidfDim;
+        }
+
+        // 3. 尝试百炼 API
         if (activeBackend == Backend.NONE && !bailianTried) {
             tryBailian();
         }
         if (activeBackend == Backend.BAILIAN && bailianClient != null) {
             List<float[]> results = bailianClient.encode(texts);
             if (!results.isEmpty()) return results;
-            // 百炼失败 → 降级
             System.out.println("[Embedder] 百炼 API 失败，降级到 TF-IDF");
             activeBackend = Backend.TFIDF;
+            activeDim = tfidfDim;
         }
 
-        // 2. 降级: TF-IDF
+        // 4. 降级: TF-IDF
         if (activeBackend == Backend.TFIDF || activeBackend == Backend.NONE) {
             if (tfidfEmbedder == null) {
                 tfidfEmbedder = new EpisodicMemory.TextEmbedder(tfidfDim);
             }
             if (activeBackend == Backend.NONE) {
                 activeBackend = Backend.TFIDF;
+                activeDim = tfidfDim;
                 System.out.println("[Embedder] 使用 TF-IDF 本地嵌入 (" + tfidfDim + " 维)");
             }
 
@@ -85,6 +122,46 @@ public class EmbedderProvider {
     }
 
     // ==================== 后端切换 ====================
+
+    private void tryBGE() {
+        bgeTried = true;
+        if (BGEOnnxEmbedding.isModelReady()) {
+            try {
+                bgeClient = new BGEOnnxEmbedding();
+                float[] testVec = bgeClient.encode("test");
+                if (testVec != null && testVec.length > 0) {
+                    activeBackend = Backend.BGE;
+                    activeDim = testVec.length;
+                    System.out.println("[Embedder] BGE 本地模型就绪 ("
+                            + testVec.length + " 维, 免费 + 离线)");
+                    return;
+                }
+            } catch (Exception e) {
+                System.out.println("[Embedder] BGE 模型不可用: " + e.getMessage());
+            }
+        }
+        System.out.println("[Embedder] BGE 模型未安装，尝试 LLM Embedding API...");
+    }
+
+    private void tryLLMEmbed() {
+        llmEmbedTried = true;
+        if (LLMEmbeddingClient.isConfigured()) {
+            try {
+                llmEmbedClient = new LLMEmbeddingClient();
+                float[] testVec = llmEmbedClient.encode("test");
+                if (testVec != null && testVec.length > 0) {
+                    activeBackend = Backend.LLM_EMBED;
+                    activeDim = testVec.length;
+                    System.out.println("[Embedder] LLM Embedding API 就绪 ("
+                            + llmEmbedClient.getModel() + ", " + testVec.length + " 维)");
+                    return;
+                }
+            } catch (Exception e) {
+                System.out.println("[Embedder] LLM Embedding API 不可用: " + e.getMessage());
+            }
+        }
+        System.out.println("[Embedder] LLM Embedding API 未配置，尝试百炼...");
+    }
 
     private void tryBailian() {
         bailianTried = true;
@@ -121,8 +198,7 @@ public class EmbedderProvider {
     public Backend getActiveBackend() { return activeBackend; }
 
     public int getDimension() {
-        if (activeBackend == Backend.BAILIAN) return BAILIAN_DIM;
-        return tfidfDim;
+        return activeDim;
     }
 
     // ==================== 工具 ====================
