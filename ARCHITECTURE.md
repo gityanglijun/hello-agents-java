@@ -1,5 +1,73 @@
 # HelloAgents-Java 项目架构
 
+## 包结构一览
+
+```
+src/main/java/
+├── com/example/agent/                    # 基础设施层
+│   ├── Agent.java                        # Agent 抽象基类
+│   ├── Config.java                       # 全局配置 Builder
+│   ├── Message.java                      # 标准化对话消息
+│   ├── LoadDotenvUtil.java               # .env 环境变量加载
+│   └── Memory.java                       # (遗留) 简单记忆
+│
+├── com/example/agent/llm/                # LLM 层
+│   ├── HelloAgentsLLM.java               # OpenAI 兼容客户端
+│   └── MyLLM.java                        # Builder 模式封装
+│
+├── com/example/agent/tool/               # 工具框架层
+│   ├── Tool.java                         # Tool 抽象基类
+│   ├── ToolParameter.java                # 工具参数定义
+│   ├── ToolRegistry.java                 # 工具注册中心
+│   ├── ToolExecutor.java                 # (遗留) 反射工具执行器
+│   ├── ToolChain.java                    # 顺序工具管道
+│   ├── ToolChainManager.java             # 命名管道管理
+│   ├── AsyncToolExecutor.java            # 并行异步工具执行
+│   ├── SearchTool.java                   # 网络搜索 (Tavily/SerpApi)
+│   ├── CalculatorTool.java               # 简单算术计算器
+│   ├── MyCalculatorTool.java             # 增强计算器
+│   └── MyAdvancedSearchTool.java         # 多源搜索编排
+│
+├── com/example/agent/memory/             # 记忆系统层
+│   ├── MemoryManager.java                # 统一记忆调度器
+│   ├── MemoryTool.java                   # 记忆管理工具 (9种操作)
+│   ├── WorkingMemory.java                # 工作记忆 (TF-IDF + 时间衰减)
+│   ├── EpisodicMemory.java               # 情景记忆 (向量 + 结构化过滤)
+│   ├── SemanticMemory.java               # 语义记忆 (向量 + 知识图谱)
+│   └── PerceptualMemory.java             # 感知记忆 (多模态)
+│
+├── com/example/agent/rag/                # RAG 系统层
+│   ├── RAGTool.java                      # 检索增强生成工具
+│   ├── MarkdownChunker.java              # 标题感知智能分块
+│   └── DocumentReader.java               # Tika 通用文档读取
+│
+├── com/example/agent/embedding/          # 嵌入服务层
+│   ├── EmbedderProvider.java             # 多后端自动降级调度器
+│   ├── BGEOnnxEmbedding.java             # BGE 本地 ONNX (512维)
+│   ├── BailianEmbeddingClient.java       # 阿里云百炼 (1536维)
+│   └── LLMEmbeddingClient.java           # OpenAI 兼容嵌入 API
+│
+├── com/example/agent/nlp/                # NLP 层
+│   └── EntityRelationExtractor.java      # 实体/关系提取 (OpenNLP + 词典)
+│
+├── com/example/agent/client/             # HTTP 客户端层
+│   ├── TavilyHttpClient.java             # Tavily 搜索 API
+│   └── SerpApiHttpClient.java            # SerpApi 搜索 API
+│
+├── com/example/agent/pattern/            # Agent 模式层
+│   ├── SimpleAgent.java                  # 基础问答 Agent
+│   ├── ReActAgent.java                   # 思考-行动-观察 循环
+│   ├── ReflectionAgent.java              # 初始→反思→精炼
+│   ├── PlanAndSolveAgent.java            # 规划→执行
+│   ├── PlanAndSolveAgentLegacy.java      # (遗留) 旧版规划器
+│   ├── Planner.java                      # 规划生成器
+│   └── Executor.java                     # 计划执行器
+│
+└── com/example/agent/app/                # 应用层
+    ├── PDFLearningAssistant.java          # PDF 智能学习助手
+    └── MyMain.java                        # 入口演示
+```
+
 ## 架构全景图
 
 ```
