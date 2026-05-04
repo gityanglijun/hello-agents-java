@@ -1,4 +1,5 @@
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\Agent.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\InteractiveAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\MyMain.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\PDFLearningAssistant.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\PDFLearningAssistantTest.java
@@ -44,6 +45,9 @@ E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\Planner.jav
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\ReActAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\ReflectionAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\SimpleAgent.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\rag\ContextBuilder.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\rag\ContextConfig.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\rag\ContextPacket.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\rag\DocumentReader.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\rag\MarkdownChunker.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\rag\RAGTool.java

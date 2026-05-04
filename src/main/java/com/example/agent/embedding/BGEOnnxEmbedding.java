@@ -117,18 +117,22 @@ public class BGEOnnxEmbedding {
         if (text == null || text.isEmpty()) text = " ";
         List<String> basicTokens = basicTokenize(text);
         List<Integer> ids = new ArrayList<>();
-        ids.add(CLS_ID);
+        ids.add(CLS_ID);                       // 先放 [CLS]
 
         for (String token : basicTokens) {
-            if (ids.size() >= MAX_LENGTH - 1) break;
+            // 检查：如果加入当前 token 会导致序列太长（留不出 [SEP] 的位置），就直接放弃这个词
+            int sizeBefore = ids.size();
             wordpieceTokenize(token, ids);
+            if (ids.size() > MAX_LENGTH - 1) { // 长度为 MAX_LENGTH - 1 才能保证加 [SEP] 后不超过 MAX_LENGTH
+                // 回滚，丢弃整个 token
+                while (ids.size() > sizeBefore) {
+                    ids.remove(ids.size() - 1);
+                }
+                break;                         // 后面更长的词也不再处理
+            }
         }
 
-        // 截断到 MAX_LENGTH - 1，为 [SEP] 留位置（WordPiece 可能一次添加多个子词）
-        while (ids.size() > MAX_LENGTH - 1) {
-            ids.remove(ids.size() - 1);
-        }
-        ids.add(SEP_ID);
+        ids.add(SEP_ID);                       // 末尾加 [SEP]
         int[] result = new int[ids.size()];
         for (int i = 0; i < ids.size(); i++) result[i] = ids.get(i);
         return result;
@@ -260,18 +264,24 @@ public class BGEOnnxEmbedding {
             int outSeqLen = raw[0].length;
             int outDim = raw[0][0].length;
 
-            // Mean pooling: 对除 padding 外的 token 取平均，跳过 [CLS] 和 [SEP]
-            vector = new float[outDim];
-            int start = 1;                    // 跳过 [CLS]
-            int end = Math.min(outSeqLen - 1, outSeqLen); // 跳过 [SEP]
-            for (int i = start; i < end; i++) {
-                for (int j = 0; j < outDim; j++) {
-                    vector[j] += raw[0][i][j];
+            // Mean pooling: 跳过 [CLS] 和 [SEP]，对剩余 token 取平均
+            int start = 1;                // 跳过 [CLS]
+            int end = outSeqLen - 1;     // 跳过 [SEP]
+            int count = end - start;     // 有效 token 数量
+
+            if (count <= 0) {
+                // 没有实质内容词，直接用 [CLS] 向量作为句子表示
+                vector = raw[0][0].clone();
+            } else {
+                vector = new float[outDim];
+                for (int i = start; i < end; i++) {
+                    for (int j = 0; j < outDim; j++) {
+                        vector[j] += raw[0][i][j];
+                    }
                 }
-            }
-            int count = Math.max(1, end - start);
-            for (int j = 0; j < outDim; j++) {
-                vector[j] /= count;
+                for (int j = 0; j < outDim; j++) {
+                    vector[j] /= count;
+                }
             }
         }
 
@@ -289,7 +299,6 @@ public class BGEOnnxEmbedding {
 
         return normalize(vector);
     }
-
     // ==================== 工具方法 ====================
 
     /** L2 归一化 */

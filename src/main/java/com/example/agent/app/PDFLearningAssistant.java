@@ -145,14 +145,16 @@ public class PDFLearningAssistant {
                 "importance", 0.6
         );
 
-        // 2. 【RAGTool】高级检索获取答案（MQE + HyDE）
+        // 2. 【RAGTool】两阶段检索：混合检索粗筛 → LLM Reranker 精排
         String answer = ragTool.run(ragParams(
                 "action", "ask",
                 "query", question,
                 "top_k", 5,
                 "enable_advanced_search", useAdvancedSearch,
                 "enable_mqe", useAdvancedSearch,
-                "enable_hyde", useAdvancedSearch
+                "enable_hyde", useAdvancedSearch,
+                "candidate_pool_multiplier", 15,
+                "enable_rerank", useAdvancedSearch
         ));
 
         // 3. 【MemoryTool】记录 QA 交互到情景记忆

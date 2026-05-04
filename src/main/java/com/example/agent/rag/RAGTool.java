@@ -116,7 +116,8 @@ public class RAGTool extends Tool {
                 new ToolParameter("enable_mqe", "boolean", "expanded_search: 启用多查询扩展"),
                 new ToolParameter("mqe_expansions", "integer", "expanded_search: MQE 扩展查询数"),
                 new ToolParameter("enable_hyde", "boolean", "expanded_search: 启用假设文档嵌入"),
-                new ToolParameter("candidate_pool_multiplier", "integer", "expanded_search: 候选池倍数"),
+                new ToolParameter("candidate_pool_multiplier", "integer", "expanded_search/rerank: 候选池倍数"),
+                new ToolParameter("enable_rerank", "boolean", "ask: 启用 LLM Reranker 精排（默认与 advanced_search 一致）"),
                 new ToolParameter("score_threshold", "number", "expanded_search: 最低分数阈值"),
                 new ToolParameter("file_path", "string", "文件路径（add_file）"),
                 new ToolParameter("title", "string", "文档标题（add_document）"),
@@ -270,17 +271,30 @@ public class RAGTool extends Tool {
             boolean enableAdvanced = getBool(params, "enable_advanced_search", false);
             boolean enableMqe = getBool(params, "enable_mqe", false);
             boolean enableHyde = getBool(params, "enable_hyde", false);
+            boolean enableRerank = getBool(params, "enable_rerank", enableAdvanced);
 
+            // 如果启用重排序，候选池要更大
+            int finalTopK = enableRerank ? Math.max(topK, 3) : topK;
+            int candidateMultiplier = getInt(params, "candidate_pool_multiplier",
+                    enableRerank ? 10 : 5);
+
+            // ===== 阶段1: 混合检索（粗筛） =====
             List<ChunkHit> hits;
             if (enableAdvanced && initLLM()) {
-                hits = searchVectorsExpanded(query, topK,
+                hits = searchVectorsExpanded(query, finalTopK,
                         enableMqe, getInt(params, "mqe_expansions", 3),
-                        enableHyde, getInt(params, "candidate_pool_multiplier", 5),
+                        enableHyde, candidateMultiplier,
                         null);
             } else {
-                hits = retrieveChunks(query, topK);
+                hits = retrieveChunks(query, Math.max(finalTopK, 20));
             }
             if (hits.isEmpty()) return "🔍 未找到与问题相关的知识";
+
+            // ===== 阶段2: LLM Reranker 精排 =====
+            if (enableRerank && initLLM() && hits.size() > topK) {
+                System.out.println("[RAG] Reranker 精排: " + hits.size() + " → " + topK);
+                hits = rerankWithLLM(query, hits, topK);
+            }
 
             StringBuilder context = new StringBuilder();
             List<String> sources = new ArrayList<>();
@@ -401,15 +415,23 @@ public class RAGTool extends Tool {
         float[] queryVec = embedder.encode(
                 EmbedderProvider.preprocessMarkdown(query));
 
-        List<VectorStore.VectorHit> hits = vectorStore.search(queryVec, topK);
+        // 候选池扩大 3 倍，用关键词加权重排序
+        int candidateK = Math.max(topK * 3, 30);
+        List<VectorStore.VectorHit> hits = vectorStore.search(queryVec, candidateK);
+
         List<ChunkHit> results = new ArrayList<>();
         for (VectorStore.VectorHit hit : hits) {
             Chunk chunk = rawToChunk(docStore.getChunkRaw(hit.id));
             if (chunk != null) {
-                results.add(new ChunkHit(chunk, hit.score));
+                double kwScore = keywordMatchScore(query, chunk.content);
+                double hybridScore = hit.score * 0.6 + kwScore * 0.4; // 向量60% + 关键词40%
+                results.add(new ChunkHit(chunk, hybridScore));
             }
         }
-        return results;
+
+        results.sort((a, b) -> Double.compare(b.score, a.score));
+        int n = Math.min(topK, results.size());
+        return results.subList(0, n);
     }
 
     // ==================== LLM 增强 ====================
@@ -426,24 +448,28 @@ public class RAGTool extends Tool {
         return true;
     }
 
+    private static final String RAG_SYSTEM_PROMPT =
+            "你是一个严谨的知识库助手。请严格遵守以下规则：\n"
+            + "1. 只根据下方参考资料中的内容回答，不得使用你自己的知识\n"
+            + "2. 回答必须引用具体的来源编号，如「[来源1]」\n"
+            + "3. 如果参考资料中有明确的定义、概念或事实，直接引用原文\n"
+            + "4. 如果资料中只涉及部分内容，明确说明哪些来自资料、哪些资料未覆盖\n"
+            + "5. 如果资料完全不涉及该问题，回答「参考资料中未直接涉及该问题」\n"
+            + "6. 不要编造、推测或补充资料中没有的信息";
+
     private String buildRAGPrompt(String question, String context) {
-        return "你是一个严谨的知识库助手。请严格遵守以下规则：\n"
-                + "1. 只根据下方参考资料中的内容回答，不得使用你自己的知识\n"
-                + "2. 回答必须引用具体的来源编号，如「[来源1]」\n"
-                + "3. 如果参考资料中有明确的定义、概念或事实，直接引用原文\n"
-                + "4. 如果资料中只涉及部分内容，明确说明哪些来自资料、哪些资料未覆盖\n"
-                + "5. 如果资料完全不涉及该问题，回答「参考资料中未直接涉及该问题」\n"
-                + "6. 不要编造、推测或补充资料中没有的信息\n\n"
-                + "=== 参考资料 ===\n"
+        return "=== 参考资料 ===\n"
                 + context + "\n"
                 + "=== 用户问题 ===\n"
                 + question + "\n\n"
                 + "请严格基于资料回答：";
     }
 
+    /** 双消息格式：规则用 system role（更高遵从度），资料+问题用 user role */
     private String callLLM(String prompt) {
         try {
             List<Map<String, String>> messages = List.of(
+                    Map.of("role", "system", "content", RAG_SYSTEM_PROMPT),
                     Map.of("role", "user", "content", prompt)
             );
             return llm.think(messages);
@@ -703,6 +729,136 @@ public class RAGTool extends Tool {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    // ==================== 两阶段检索：LLM Reranker ====================
+
+    /**
+     * LLM 列表式重排序（Listwise Reranking）。
+     * 将候选分块编号后交给 LLM，由 LLM 的全注意力机制做 query-passage 交叉打分，
+     * 输出最相关分块的编号顺序。精度远超余弦相似度。
+     */
+    private List<ChunkHit> rerankWithLLM(String query, List<ChunkHit> candidates, int topK) {
+        if (candidates.size() <= topK) return candidates;
+
+        // 构建排序 prompt：每个候选分块取前 250 字符做预览
+        StringBuilder sb = new StringBuilder();
+        sb.append("你是一个搜索排序专家。根据用户查询，从候选文档片段中选出最相关的 ")
+                .append(topK).append(" 个。\n\n");
+        sb.append("用户查询: ").append(query).append("\n\n");
+        sb.append("候选片段:\n");
+
+        for (int i = 0; i < candidates.size(); i++) {
+            Chunk chunk = candidates.get(i).chunk;
+            String preview = chunk.content.length() > 250
+                    ? chunk.content.substring(0, 250) + "..."
+                    : chunk.content;
+            sb.append("[").append(i + 1).append("] ").append(preview).append("\n\n");
+        }
+
+        sb.append("请只输出最相关的 ").append(topK)
+                .append(" 个片段编号（用逗号分隔），例如: 3,7,12,1,5");
+
+        try {
+            String response = llm.think(List.of(
+                    Map.of("role", "system", "content", "你是搜索排序专家。只输出最相关片段编号，用逗号分隔。不要解释。"),
+                    Map.of("role", "user", "content", sb.toString())
+            ));
+
+            if (response == null || response.isBlank()) {
+                System.out.println("[Reranker] LLM 无响应，降级为原始排序");
+                return candidates.subList(0, topK);
+            }
+
+            // 解析排序结果
+            List<Integer> ranking = parseRanking(response, candidates.size());
+            if (ranking.isEmpty()) {
+                System.out.println("[Reranker] 无法解析排序结果，降级为原始排序");
+                return candidates.subList(0, topK);
+            }
+
+            List<ChunkHit> reranked = new ArrayList<>();
+            for (int idx : ranking) {
+                if (idx >= 0 && idx < candidates.size()) {
+                    reranked.add(candidates.get(idx));
+                }
+            }
+
+            // 不足 topK 时用原始排序补齐
+            if (reranked.size() < topK) {
+                for (ChunkHit hit : candidates) {
+                    if (!reranked.contains(hit)) {
+                        reranked.add(hit);
+                        if (reranked.size() >= topK) break;
+                    }
+                }
+            }
+
+            System.out.println("[Reranker] 精排完成: " + ranking);
+            return reranked.subList(0, Math.min(topK, reranked.size()));
+
+        } catch (Exception e) {
+            System.out.println("[Reranker] 失败: " + e.getMessage() + "，降级为原始排序");
+            return candidates.subList(0, topK);
+        }
+    }
+
+    /** 解析 LLM 返回的排序结果，支持 "3,7,12,1,5" 或 "[3, 7, 12, 1, 5]" 等格式 */
+    private static List<Integer> parseRanking(String response, int maxNum) {
+        List<Integer> result = new ArrayList<>();
+        // 提取所有数字
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\d+").matcher(response);
+        while (m.find()) {
+            int num = Integer.parseInt(m.group());
+            if (num >= 1 && num <= maxNum) {
+                // LLM 返回的是 1-indexed，转为 0-indexed
+                int idx = num - 1;
+                if (!result.contains(idx)) {
+                    result.add(idx);
+                }
+            }
+        }
+        return result;
+    }
+
+    // ==================== 混合检索：关键词匹配 ====================
+
+    /**
+     * 计算查询与分块内容的关键词匹配得分。
+     * 中文用 jieba 分词提取关键词，英文按空格和标点分词。
+     * 得分 = 匹配到的关键词数 / 总关键词数，归一化到 [0, 1]。
+     */
+    private double keywordMatchScore(String query, String content) {
+        if (query == null || query.isBlank() || content == null || content.isBlank()) return 0;
+
+        String qLower = query.toLowerCase();
+        String cLower = content.toLowerCase();
+
+        // 提取查询关键词
+        Set<String> keywords = new java.util.LinkedHashSet<>();
+
+        // 英文词（长度 ≥ 2，过滤短噪音）
+        for (String word : qLower.split("[^a-z0-9]+")) {
+            if (word.length() >= 2) keywords.add(word);
+        }
+
+        // 中文词：用 jieba 分词
+        try {
+            java.util.Map<String, Integer> cnFreq = com.example.agent.nlp.ChineseTokenizer.segmentWithFreq(query);
+            for (String w : cnFreq.keySet()) {
+                if (w.length() >= 2) keywords.add(w);
+            }
+        } catch (Exception ignored) {}
+
+        if (keywords.isEmpty()) return 0;
+
+        // 计算匹配比例
+        int matched = 0;
+        for (String kw : keywords) {
+            if (cLower.contains(kw)) matched++;
+        }
+
+        return (double) matched / keywords.size();
     }
 
     // ==================== 工具方法 ====================

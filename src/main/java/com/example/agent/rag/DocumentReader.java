@@ -92,6 +92,7 @@ public class DocumentReader {
 
     /**
      * 读取文档并包装为 Markdown 结构。
+     * 对 PDF 等二进制格式额外执行后处理清洗。
      */
     public static String readAsMarkdown(String filePath) {
         String content = read(filePath);
@@ -105,6 +106,13 @@ public class DocumentReader {
             return content;
         }
 
+        // PDF/二进制格式：后处理清洗（去页码/噪音/合并断行/段落重组）
+        if (!TEXT_EXTENSIONS.contains(ext) && !TIKA_BETTER_EXTENSIONS.contains(ext)) {
+            int before = content.length();
+            content = postProcessPdfText(content);
+            System.out.println("[RAG] PDF 后处理: " + before + " → " + content.length() + " 字符");
+        }
+
         if (!content.stripLeading().startsWith("#")) {
             System.out.println("[RAG] Markdown 包装: " + filename + " -> 添加标题 # " + filename);
             return "# " + filename + "\n\n" + content;
@@ -113,11 +121,169 @@ public class DocumentReader {
         return content;
     }
 
+    // ==================== PDF 后处理 ====================
+
+    /**
+     * PDF 文本后处理清洗（解决 Tika 提取学术 PDF 的常见噪音问题）：
+     * 1. 移除独立页码行（纯数字，可能带连字符）
+     * 2. 移除噪音行（单字符非数字、纯标点）
+     * 3. 智能合并短行（修复 PDF 换行导致的句子断裂）
+     * 4. 段落重组（按空行/标题/长句边界重新分段）
+     */
+    static String postProcessPdfText(String text) {
+        if (text == null || text.isBlank()) return text;
+
+        // ---- 预处理：统一换行 ----
+        text = text.replace("\r\n", "\n").replace("\r", "\n");
+
+        String[] rawLines = text.split("\n");
+
+        // ---- 第1步：分类并过滤行 ----
+        List<String> lines = new ArrayList<>();
+        for (String line : rawLines) {
+            String stripped = line.strip();
+            if (stripped.isEmpty()) {
+                lines.add(""); // 保留空行作为段落边界
+                continue;
+            }
+            // 移除独立页码: "42", "- 42 -", "Page 42", "[42]"
+            if (isPageNumber(stripped)) continue;
+            // 移除纯噪音: 单字符非数字、纯标点
+            if (isNoiseLine(stripped)) continue;
+            lines.add(line); // 保留原始缩进
+        }
+
+        // ---- 第2步：智能合并短行（修复 PDF 换行断裂） ----
+        List<String> merged = new ArrayList<>();
+        StringBuilder buf = new StringBuilder();
+
+        for (String line : lines) {
+            String stripped = line.strip();
+            if (stripped.isEmpty()) {
+                flushLineBuf(buf, merged);
+                merged.add(""); // 保留段落边界
+                continue;
+            }
+
+            // 标题行（# 开头或全大写短行）→ 不合并
+            if (stripped.startsWith("#") || (stripped.length() <= 60 && isAllCaps(stripped))) {
+                flushLineBuf(buf, merged);
+                merged.add(stripped);
+                continue;
+            }
+
+            // 短行（< 60 字符 & 不以句子终结符结尾）→ 拼接到缓冲区
+            if (stripped.length() < 60 && !endsWithSentenceEnd(stripped)) {
+                if (buf.length() > 0) buf.append(" ");
+                buf.append(stripped);
+            } else {
+                flushLineBuf(buf, merged);
+                merged.add(stripped);
+            }
+        }
+        flushLineBuf(buf, merged);
+
+        // ---- 第3步：段落重组 ----
+        // 合并过短的相邻段落（同一主题），按空行分大段
+        List<String> restructured = new ArrayList<>();
+        StringBuilder paraBuf = new StringBuilder();
+        int consecutiveContent = 0;
+
+        for (String line : merged) {
+            if (line.isEmpty()) {
+                flushParaBuf(paraBuf, restructured);
+                consecutiveContent = 0;
+                continue;
+            }
+            if (paraBuf.length() > 0) paraBuf.append("\n");
+            paraBuf.append(line);
+            consecutiveContent++;
+
+            // 标题行后立即断段
+            if (line.strip().startsWith("#")) {
+                flushParaBuf(paraBuf, restructured);
+                consecutiveContent = 0;
+            }
+        }
+        flushParaBuf(paraBuf, restructured);
+
+        return String.join("\n\n", restructured);
+    }
+
+    // ---- 行判断规则 ----
+
+    /** 判断是否为独立页码: 纯数字、数字加连字符、Page N、(N) 等形式 */
+    private static boolean isPageNumber(String s) {
+        if (s.matches("^\\d{1,4}(\\s*[-–—]\\s*\\d{1,4})?$")) return true;  // "42" 或 "3 - 4"
+        if (s.matches("^\\[?\\d{1,4}\\]?$")) return true;                     // "[42]" 或 "42]"
+        if (s.matches("^(?i)page\\s*\\d{1,4}$")) return true;                 // "Page 42"
+        if (s.matches("^[-–—]{3,}$")) return true;                            // "----" 分隔线
+        return false;
+    }
+
+    /** 判断是否为噪音行: 单字符非数字、纯标点或空白符组合 */
+    private static boolean isNoiseLine(String s) {
+        if (s.length() <= 1 && !s.matches("\\d")) return true;    // 单字符且非数字
+        if (s.matches("^[\\p{Punct}\\s]+$") && s.length() <= 3) return true; // 纯标点 ≤3 字符
+        if (s.matches("^[|]{2,}$")) return true;                  // "|||" 表格残余
+        if (s.matches("^[._\\-·•]{2,}$")) return true;            // "..." 或 "___" 或 "•••"
+        return false;
+    }
+
+    /** 判断是否以句子终结符结尾（。！？.!?;；:…—")」』）】》" 不算终结符）*/
+    private static boolean endsWithSentenceEnd(String s) {
+        if (s.endsWith(".") && s.length() > 2) {
+            // 英文句号：排除缩写（如 "et al." "Fig." "e.g."）
+            String lastWord = s.replaceFirst(".*\\s", "");
+            if (lastWord.matches("(?i)(al|fig|eg|etc|vs|dr|mr|mrs|ms|prof|dept|approx|vol|pp|no)\\."))
+                return false;
+            return true;
+        }
+        return s.endsWith("。") || s.endsWith("！") || s.endsWith("？")
+                || s.endsWith("!") || s.endsWith("?")
+                || s.endsWith(":") || s.endsWith("：")
+                || s.endsWith(";") || s.endsWith("；");
+    }
+
+    /** 判断是否为全大写英文字母（标题检测） */
+    private static boolean isAllCaps(String s) {
+        int letters = 0;
+        for (char c : s.toCharArray()) {
+            if (Character.isLetter(c)) {
+                letters++;
+                if (!Character.isUpperCase(c)) return false;
+            }
+        }
+        return letters >= 3;
+    }
+
+    private static void flushLineBuf(StringBuilder buf, List<String> out) {
+        if (buf.length() > 0) {
+            out.add(buf.toString().strip());
+            buf.setLength(0);
+        }
+    }
+
+    private static void flushParaBuf(StringBuilder buf, List<String> out) {
+        if (buf.length() > 0) {
+            out.add(buf.toString().strip());
+            buf.setLength(0);
+        }
+    }
+
     // ==================== Tika 路径 ====================
 
     private static String readWithTika(Path path) {
         try {
-            String content = getTika().parseToString(path.toFile());
+            // 不用 parseToString()——它的 BodyContentHandler 默认限制 100,000 字符，
+            // 超过的部分会被静默截断。手动传 writeLimit=-1 解除限制。
+            var handler = new org.apache.tika.sax.BodyContentHandler(-1);
+            var parser = new org.apache.tika.parser.AutoDetectParser();
+            var metadata = new org.apache.tika.metadata.Metadata();
+            try (var in = Files.newInputStream(path)) {
+                parser.parse(in, handler, metadata);
+            }
+            String content = handler.toString();
             if (content != null && !content.isBlank()) {
                 System.out.println("[RAG] Tika 解析成功: " + path.getFileName()
                         + " -> " + content.length() + " 字符");
