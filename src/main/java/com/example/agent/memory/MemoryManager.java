@@ -3,10 +3,22 @@ package com.example.agent.memory;
 import com.example.agent.store.DocumentStore;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * 记忆管理器 — 四种记忆类的统一调度中心。
+ *
+ * 存储架构:
+ *   DocumentStore  → 主记录（元数据、统计、遗忘策略）
+ *   WorkingMemory  → 短期工作记忆（TF-IDF + 时间衰减）
+ *   EpisodicMemory → 情景记忆（向量 + 结构化过滤）
+ *   SemanticMemory → 语义记忆（向量 + 知识图谱）
+ *   PerceptualMemory → 感知记忆（多模态）
+ *
+ * addMemory()    → 写入 DocumentStore + 分发到对应记忆类
+ * retrieve()     → 按类型分发，合并各记忆类的检索结果
+ */
 public class MemoryManager {
 
     public static final String TYPE_WORKING = "working";
@@ -39,8 +51,14 @@ public class MemoryManager {
         }
     }
 
-    private final DocumentStore docStore;
+    // ==================== 存储层 ====================
+
+    private final DocumentStore docStore;          // 主记录
     private final boolean ownDocStore;
+    private final WorkingMemory workingMemory;
+    private final EpisodicMemory episodicMemory;
+    private final SemanticMemory semanticMemory;
+    private final PerceptualMemory perceptualMemory;
 
     // ==================== 构造 ====================
 
@@ -51,12 +69,15 @@ public class MemoryManager {
     public MemoryManager(DocumentStore docStore) {
         this.docStore = docStore != null ? docStore : new DocumentStore(":memory:");
         this.ownDocStore = docStore == null;
+        this.workingMemory = new WorkingMemory();
+        this.episodicMemory = new EpisodicMemory();
+        this.semanticMemory = new SemanticMemory();
+        this.perceptualMemory = new PerceptualMemory();
     }
 
     /** 使用文件持久化 */
     public MemoryManager(String dbPath) {
-        this.docStore = new DocumentStore(dbPath != null ? dbPath : ":memory:");
-        this.ownDocStore = true;
+        this(new DocumentStore(dbPath != null ? dbPath : ":memory:"));
     }
 
     // ==================== 添加记忆 ====================
@@ -71,8 +92,38 @@ public class MemoryManager {
         }
 
         MemoryItem item = new MemoryItem(id, content, memoryType, importance, metadata, now);
+
+        // 1. 写入主记录
         docStore.insertMemoryItem(item);
+
+        // 2. 分发到对应记忆类
+        dispatchAdd(item);
+
         return id;
+    }
+
+    /** 将 MemoryItem 分发到对应的记忆类 */
+    private void dispatchAdd(MemoryItem item) {
+        try {
+            switch (item.memoryType) {
+                case TYPE_WORKING:
+                    workingMemory.add(item);
+                    break;
+                case TYPE_EPISODIC:
+                    episodicMemory.add(item);
+                    break;
+                case TYPE_SEMANTIC:
+                    semanticMemory.add(item);
+                    break;
+                case TYPE_PERCEPTUAL:
+                    perceptualMemory.add(item);
+                    break;
+                default:
+                    workingMemory.add(item); // 兜底
+            }
+        } catch (Exception e) {
+            System.err.println("[MemoryManager] 分发到 " + item.memoryType + " 失败: " + e.getMessage());
+        }
     }
 
     private String autoClassify(String content, String currentType) {
@@ -93,41 +144,59 @@ public class MemoryManager {
 
     public List<MemoryItem> retrieveMemories(String query, int limit,
                                              List<String> memoryTypes, double minImportance) {
-        boolean typeFilterActive = memoryTypes != null && !memoryTypes.isEmpty();
+        // 确定要查询的类型
+        List<String> types = resolveTypes(memoryTypes);
+        boolean hasQuery = query != null && !query.isBlank();
 
-        // 获取所有记忆，在内存中过滤排序
-        List<MemoryItem> all = docStore.getAllMemoryItems();
-
-        if (query == null || query.isBlank()) {
-            return all.stream()
-                    .filter(m -> m.importance >= minImportance)
-                    .filter(m -> !typeFilterActive || memoryTypes.contains(m.memoryType))
-                    .sorted(Comparator.comparingDouble((MemoryItem m) -> m.importance).reversed())
-                    .limit(limit > 0 ? limit : 5)
-                    .collect(Collectors.toList());
+        // 对每种类型调用其专有检索逻辑，合并结果
+        List<MemoryItem> results = new ArrayList<>();
+        for (String type : types) {
+            List<MemoryItem> typeResults;
+            if (hasQuery) {
+                typeResults = dispatchRetrieve(type, query, Math.max(limit, 10),
+                        Map.of("min_importance", minImportance));
+            } else {
+                // 无查询词：从 DocumentStore 按重要性返回
+                typeResults = docStore.getMemoryItemsByType(type).stream()
+                        .filter(m -> m.importance >= minImportance)
+                        .limit(limit)
+                        .collect(Collectors.toList());
+            }
+            results.addAll(typeResults);
         }
 
-        String[] keywords = query.toLowerCase().split("\\s+");
-
-        return all.stream()
-                .filter(m -> m.importance >= minImportance)
-                .filter(m -> !typeFilterActive || memoryTypes.contains(m.memoryType))
-                .map(m -> new AbstractMap.SimpleEntry<>(m, keywordScore(m, keywords)))
-                .filter(e -> e.getValue() > 0)
-                .sorted((a, b) -> Double.compare(b.getValue(), a.getValue()))
-                .limit(limit > 0 ? limit : 5)
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toList());
+        // 按重要性降序排列（不同记忆类的分数已各自归一化）
+        results.sort(Comparator.comparingDouble((MemoryItem m) -> m.importance).reversed());
+        int resultLimit = limit > 0 ? Math.min(limit, results.size()) : results.size();
+        return results.subList(0, resultLimit);
     }
 
-    private double keywordScore(MemoryItem item, String[] keywords) {
-        String content = item.content.toLowerCase();
-        int matches = 0;
-        for (String kw : keywords) {
-            if (content.contains(kw)) matches++;
+    /** 确定要查询的记忆类型列表 */
+    private List<String> resolveTypes(List<String> requested) {
+        if (requested != null && !requested.isEmpty()) return new ArrayList<>(requested);
+        return List.of(TYPE_WORKING, TYPE_EPISODIC, TYPE_SEMANTIC, TYPE_PERCEPTUAL);
+    }
+
+    /** 将检索分发到指定的记忆类 */
+    private List<MemoryItem> dispatchRetrieve(String type, String query, int limit,
+                                               Map<String, Object> kwargs) {
+        try {
+            switch (type) {
+                case TYPE_WORKING:
+                    return workingMemory.retrieve(query, limit);
+                case TYPE_EPISODIC:
+                    return episodicMemory.retrieve(query, limit, kwargs);
+                case TYPE_SEMANTIC:
+                    return semanticMemory.retrieve(query, limit, kwargs);
+                case TYPE_PERCEPTUAL:
+                    return perceptualMemory.retrieve(query, limit, kwargs);
+                default:
+                    return Collections.emptyList();
+            }
+        } catch (Exception e) {
+            System.err.println("[MemoryManager] 检索 " + type + " 失败: " + e.getMessage());
+            return Collections.emptyList();
         }
-        double keywordRatio = (double) matches / keywords.length;
-        return keywordRatio * 0.7 + item.importance * 0.3;
     }
 
     // ==================== 单条操作 ====================
@@ -152,22 +221,22 @@ public class MemoryManager {
 
     // ==================== 整合记忆 ====================
 
+    /** 将重要程度达标的工作记忆提升为情景记忆，或情景记忆提升为语义记忆 */
     public int consolidateMemories(String fromType, String toType, double importanceThreshold) {
         int count = 0;
-        List<MemoryItem> all = docStore.getAllMemoryItems();
         String now = now();
+        List<MemoryItem> all = docStore.getAllMemoryItems();
+
         for (MemoryItem item : all) {
             if (item.memoryType.equals(fromType) && item.importance >= importanceThreshold) {
-                Map<String, String> meta = new LinkedHashMap<>(item.metadata);
-                docStore.updateMemoryItem(item.id, null, null, meta);
-                // 通过直接修改+重新插入更新类型
-                MemoryItem updated = docStore.getMemoryItem(item.id);
-                if (updated != null) {
-                    updated.memoryType = toType;
-                    updated.updatedAt = now;
-                    docStore.insertMemoryItem(updated);
-                    count++;
-                }
+                // 更新类型
+                item.memoryType = toType;
+                item.updatedAt = now;
+                docStore.insertMemoryItem(item); // INSERT OR REPLACE
+
+                // 写入目标记忆类
+                dispatchAdd(item);
+                count++;
             }
         }
         return count;
@@ -178,6 +247,10 @@ public class MemoryManager {
     public int clearAll() {
         int count = docStore.countMemoryItems();
         docStore.clearAll();
+        workingMemory.clear();
+        episodicMemory.clear();
+        semanticMemory.clear();
+        perceptualMemory.clear();
         return count;
     }
 
@@ -237,15 +310,18 @@ public class MemoryManager {
         );
     }
 
+    // ==================== 访问器 ====================
+
+    public DocumentStore getDocumentStore() { return docStore; }
+    public WorkingMemory getWorkingMemory() { return workingMemory; }
+    public EpisodicMemory getEpisodicMemory() { return episodicMemory; }
+    public SemanticMemory getSemanticMemory() { return semanticMemory; }
+    public PerceptualMemory getPerceptualMemory() { return perceptualMemory; }
+
     // ==================== 辅助 ====================
 
     private static String now() {
         return LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
-    }
-
-    /** 获取底层 DocumentStore（用于传递给其他组件共享数据库） */
-    public DocumentStore getDocumentStore() {
-        return docStore;
     }
 
     public void close() {
