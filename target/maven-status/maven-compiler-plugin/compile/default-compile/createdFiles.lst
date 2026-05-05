@@ -15,6 +15,7 @@ com\example\agent\rag\ContextConfig$Builder.class
 com\example\agent\tool\MyAdvancedSearchToolTest.class
 com\example\agent\pattern\ProjectAssistantTest.class
 com\example\agent\tool\MyCalculatorToolTest.class
+com\example\agent\tool\TerminalToolSmokeTest.class
 com\example\agent\LoadDotenvUtil.class
 com\example\agent\rag\DocumentReader.class
 com\example\agent\memory\PerceptualMemory.class
@@ -71,6 +72,7 @@ com\example\agent\memory\SemanticMemory$VectorHit.class
 com\example\agent\memory\MemoryManager$MemoryItem.class
 com\example\agent\rag\MarkdownChunker$Paragraph.class
 com\example\agent\pattern\PlanAndSolveAgent$2.class
+com\example\agent\tool\TerminalTool.class
 com\example\agent\store\DocumentStore.class
 com\example\agent\llm\MyLLM.class
 com\example\agent\nlp\ChineseTokenizer.class
