@@ -316,6 +316,15 @@ public class PerceptualMemory implements BaseMemory {
 
     public boolean hasCLIP() { return clipEmbedder != null; }
 
+    @Override
+    public void remove(String id) {
+        if (id == null) return;
+        // 从所有模态的 VectorStore 中移除（不确定存在哪个模态里）
+        for (VectorStore store : vectorStores.values()) {
+            store.remove(id);
+        }
+    }
+
     public void clear() {
         for (VectorStore store : vectorStores.values()) store.clear();
         docStore.clearAll();

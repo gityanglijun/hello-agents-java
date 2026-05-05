@@ -305,6 +305,15 @@ public class WorkingMemory implements BaseMemory {
         vectorsDirty = true;
     }
 
+    @Override
+    public void remove(String id) {
+        if (id == null) return;
+        boolean removed = memories.removeIf(m -> m.id.equals(id));
+        if (removed) {
+            vectorsDirty = true;
+        }
+    }
+
     // ==================== 内部类型 ====================
 
     private static class ScoredItem {

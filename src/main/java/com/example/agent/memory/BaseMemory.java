@@ -21,6 +21,9 @@ public interface BaseMemory {
     /** 当前存储的记忆数量 */
     int size();
 
+    /** 移除指定 ID 的记忆（从向量存储、图谱存储、文档存储中彻底清理） */
+    void remove(String id);
+
     /** 清空所有记忆 */
     void clear();
 }

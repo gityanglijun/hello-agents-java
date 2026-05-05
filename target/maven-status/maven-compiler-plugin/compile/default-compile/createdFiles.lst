@@ -6,6 +6,7 @@ com\example\agent\tool\ToolRegistry.class
 com\example\agent\memory\EpisodicMemory$ScoredItem.class
 com\example\agent\memory\PerceptualMemoryTest.class
 com\example\agent\rag\RAGToolTest.class
+com\example\agent\tool\NoteTool$1.class
 com\example\agent\tool\ToolChainManager.class
 com\example\agent\embedding\CLIPOnnxEmbedding$BpePair.class
 com\example\agent\app\InteractiveAgent.class
@@ -42,6 +43,8 @@ com\example\agent\nlp\EntityRelationExtractor.class
 com\example\agent\memory\WorkingMemory$ScoredItem.class
 com\example\agent\pattern\MyReActAgent.class
 com\example\agent\tool\CalculatorTool.class
+com\example\agent\tool\NoteToolSmokeTest.class
+com\example\agent\tool\NoteTool.class
 com\example\agent\pattern\SimpleAgent.class
 com\example\agent\app\PDFLearningAssistant.class
 com\example\agent\pattern\Planner.class
@@ -99,6 +102,7 @@ com\example\agent\rag\RAGTool.class
 com\example\agent\store\GraphStore.class
 com\example\agent\tool\ToolParameter.class
 com\example\agent\tool\Tool.class
+com\example\agent\tool\NoteTool$Note.class
 com\example\agent\embedding\LLMEmbeddingClient.class
 com\example\agent\memory\WorkingMemory$TfidfEntry.class
 com\example\agent\store\GraphStore$EntityData.class

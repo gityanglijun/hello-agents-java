@@ -284,6 +284,13 @@ public class EpisodicMemory implements BaseMemory {
         return docStore.listEpisodeSessions();
     }
 
+    @Override
+    public void remove(String id) {
+        if (id == null) return;
+        vectorStore.remove(id);
+        docStore.deleteEpisode(id);
+    }
+
     public void clear() {
         docStore.clearAll();
         vectorStore.clear();

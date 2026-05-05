@@ -156,6 +156,29 @@ public class GraphStore {
         return result;
     }
 
+    /** 解除一条记忆的所有实体关联，并清理该记忆关联的孤立实体和无关联关系 */
+    public void unlinkMemory(String memoryId) {
+        Set<String> linkedEntities = memoryToEntities.remove(memoryId);
+        if (linkedEntities == null) return;
+
+        for (String entityId : linkedEntities) {
+            Set<String> memSet = entityToMemories.get(entityId);
+            if (memSet != null) {
+                memSet.remove(memoryId);
+                // 该实体不再关联任何记忆 → 移除实体及其关系
+                if (memSet.isEmpty()) {
+                    entityToMemories.remove(entityId);
+                    entities.remove(entityId);
+                    // 清理涉及该实体的所有关系
+                    List<RelationData> outRels = outgoingEdges.remove(entityId);
+                    List<RelationData> inRels = incomingEdges.remove(entityId);
+                    if (outRels != null) outRels.forEach(r -> allRelations.remove(r));
+                    if (inRels != null) inRels.forEach(r -> allRelations.remove(r));
+                }
+            }
+        }
+    }
+
     /** 记忆关联的实体ID集合 */
     public Set<String> getMemoryEntities(String memoryId) {
         return memoryToEntities.getOrDefault(memoryId, Collections.emptySet());

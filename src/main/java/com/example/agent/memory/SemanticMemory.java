@@ -316,6 +316,14 @@ public class SemanticMemory implements BaseMemory {
         return docStore.getMemoryItem(id);
     }
 
+    @Override
+    public void remove(String id) {
+        if (id == null) return;
+        vectorStore.remove(id);
+        graphStore.unlinkMemory(id);
+        docStore.deleteMemoryItem(id);
+    }
+
     public void clear() {
         vectorStore.clear();
         graphStore.clear();

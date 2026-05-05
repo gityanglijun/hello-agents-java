@@ -227,6 +227,49 @@ public class DocumentStore implements AutoCloseable {
         }
     }
 
+    /** 查询遗忘策略将要删除的 ID 列表（用于同步清理记忆类内部存储） */
+    public List<String> getMemoryItemIdsByStrategy(String strategy, double threshold, int maxAgeDays) {
+        List<String> ids = new ArrayList<>();
+        try {
+            switch (strategy) {
+                case "importance_based":
+                    try (PreparedStatement ps = conn.prepareStatement("SELECT id FROM memory_items WHERE importance < ?")) {
+                        ps.setDouble(1, threshold);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next()) ids.add(rs.getString(1));
+                        }
+                    }
+                    break;
+                case "time_based": {
+                    String cutoff = java.time.LocalDateTime.now().minus(maxAgeDays, java.time.temporal.ChronoUnit.DAYS)
+                            .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                    try (PreparedStatement ps = conn.prepareStatement("SELECT id FROM memory_items WHERE created_at < ?")) {
+                        ps.setString(1, cutoff);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next()) ids.add(rs.getString(1));
+                        }
+                    }
+                    break;
+                }
+                case "capacity_based": {
+                    int maxCap = (int) threshold;
+                    int total = countMemoryItems();
+                    if (maxCap > 0 && total > maxCap) {
+                        try (Statement stmt = conn.createStatement();
+                             ResultSet rs = stmt.executeQuery(
+                                     "SELECT id FROM memory_items ORDER BY importance ASC LIMIT " + (total - maxCap))) {
+                            while (rs.next()) ids.add(rs.getString(1));
+                        }
+                    }
+                    break;
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("[DocumentStore] 查询待删除ID失败: " + e.getMessage());
+        }
+        return ids;
+    }
+
     public int deleteMemoryItems(String strategy, double threshold, int maxAgeDays) {
         int before = countMemoryItems();
         try {

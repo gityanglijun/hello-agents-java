@@ -216,6 +216,24 @@ public class MemoryManager {
     // ==================== 遗忘策略 ====================
 
     public int forgetMemories(String strategy, double threshold, int maxAgeDays) {
+        // 1. 先查出待删除的 ID 列表
+        List<String> toDelete = docStore.getMemoryItemIdsByStrategy(strategy, threshold, maxAgeDays);
+        if (toDelete.isEmpty()) return 0;
+
+        // 2. 同步清理各记忆类的内部存储（向量/图谱）
+        for (String id : toDelete) {
+            MemoryItem item = docStore.getMemoryItem(id);
+            if (item != null) {
+                switch (item.memoryType) {
+                    case TYPE_WORKING:    workingMemory.remove(id);    break;
+                    case TYPE_EPISODIC:   episodicMemory.remove(id);   break;
+                    case TYPE_SEMANTIC:   semanticMemory.remove(id);   break;
+                    case TYPE_PERCEPTUAL: perceptualMemory.remove(id); break;
+                }
+            }
+        }
+
+        // 3. 最后从 DocumentStore 主表中删除
         return docStore.deleteMemoryItems(strategy, threshold, maxAgeDays);
     }
 
