@@ -1,5 +1,6 @@
 package com.example.agent.memory;
 
+import com.example.agent.embedding.EmbedderProvider;
 import com.example.agent.store.DocumentStore;
 import com.example.agent.store.VectorStore;
 import java.time.LocalDateTime;
@@ -35,31 +36,31 @@ public class EpisodicMemory implements BaseMemory {
     // ==================== 存储层 ====================
 
     private final DocumentStore docStore;
-    private final boolean ownDocStore;  // 是否由本类管理 docStore 生命周期
+    private final boolean ownDocStore;
     private final VectorStore vectorStore;
-    private final TextEmbedder embedder;
+    private final EmbedderProvider embedder;
 
     // ==================== 构造 ====================
 
     public EpisodicMemory() {
-        this(DEFAULT_VECTOR_DIM);
+        this(new EmbedderProvider(DEFAULT_VECTOR_DIM), null, null);
     }
 
-    public EpisodicMemory(int vectorDim) {
-        this(new TextEmbedder(vectorDim), null, null);
+    public EpisodicMemory(int tfidfDim) {
+        this(new EmbedderProvider(tfidfDim), null, null);
     }
 
-    public EpisodicMemory(TextEmbedder embedder) {
+    public EpisodicMemory(EmbedderProvider embedder) {
         this(embedder, null, null);
     }
 
     public EpisodicMemory(MemoryConfig config) {
-        this(new TextEmbedder(config.embedderFallbackDim), null, null);
+        this(new EmbedderProvider(config.embedderFallbackDim), null, null);
     }
 
     /** 使用外部存储后端（持久化）。传 null 则使用默认内存存储 */
-    public EpisodicMemory(TextEmbedder embedder, DocumentStore docStore, VectorStore vectorStore) {
-        this.embedder = embedder != null ? embedder : new TextEmbedder(DEFAULT_VECTOR_DIM);
+    public EpisodicMemory(EmbedderProvider embedder, DocumentStore docStore, VectorStore vectorStore) {
+        this.embedder = embedder != null ? embedder : new EmbedderProvider(DEFAULT_VECTOR_DIM);
         this.docStore = docStore != null ? docStore : new DocumentStore(":memory:");
         this.ownDocStore = docStore == null;
         this.vectorStore = vectorStore != null ? vectorStore : new VectorStore(DEFAULT_VECTOR_DIM);
@@ -286,7 +287,6 @@ public class EpisodicMemory implements BaseMemory {
     public void clear() {
         docStore.clearAll();
         vectorStore.clear();
-        embedder.reset();
     }
 
     /** 持久化向量存储 */

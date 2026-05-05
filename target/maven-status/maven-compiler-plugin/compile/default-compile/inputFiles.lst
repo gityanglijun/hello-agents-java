@@ -8,6 +8,7 @@ E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\client\TavilyHttpCl
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\Config.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\embedding\BailianEmbeddingClient.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\embedding\BGEOnnxEmbedding.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\embedding\CLIPOnnxEmbedding.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\embedding\EmbedderProvider.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\embedding\LLMEmbeddingClient.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\llm\HelloAgentsLLM.java
@@ -30,6 +31,8 @@ E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\memory\WorkingMemor
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\Message.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\nlp\ChineseTokenizer.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\nlp\EntityRelationExtractor.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\ContextAwareAgent.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\ContextAwareAgentTest.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\Executor.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\MyPlanAndSolveAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\MyPlanAndSolveAgentTest.java

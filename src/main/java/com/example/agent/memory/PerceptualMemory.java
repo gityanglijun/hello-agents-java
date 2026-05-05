@@ -1,16 +1,28 @@
 package com.example.agent.memory;
 
+import com.example.agent.embedding.CLIPOnnxEmbedding;
+import com.example.agent.embedding.EmbedderProvider;
 import com.example.agent.store.DocumentStore;
 import com.example.agent.store.VectorStore;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
+import javax.imageio.ImageIO;
 
 /**
- * 感知记忆实现 — 使用 VectorStore + DocumentStore 作为存储后端。
- * 支持多模态（文本/图像/音频），按模态分离向量存储。
+ * 感知记忆实现 — 多模态编码。
+ *
+ * TEXT  → EmbedderProvider (BGE → LLM API → 百炼 → TF-IDF 降级链)
+ * IMAGE → CLIP ONNX (512维，文本与图像共享同一向量空间，支持跨模态检索)
+ * AUDIO → 确定性哈希伪向量 (无可用模型时的降级)
+ *
+ * 跨模态检索：用文本查询可直接搜索图像 VectorStore，
+ * 因为 CLIP 将文本和图像映射到了同一语义空间。
  */
 public class PerceptualMemory implements BaseMemory {
 
@@ -22,13 +34,18 @@ public class PerceptualMemory implements BaseMemory {
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
     private static final double DECAY_FACTOR = 0.1;
     private static final double MIN_RECENCY = 0.1;
+    private static final int CLIP_DIM = 512;
 
     // ==================== 存储层 ====================
 
     private final Map<String, VectorStore> vectorStores = new LinkedHashMap<>();
     private final DocumentStore docStore;
     private final boolean ownDocStore;
-    private final EpisodicMemory.TextEmbedder textEmbedder;
+
+    // 编码器
+    private final EmbedderProvider textEmbedder;       // TEXT 模态
+    private final CLIPOnnxEmbedding clipEmbedder;       // IMAGE 模态 (null → 降级哈希)
+    private final EpisodicMemory.TextEmbedder fallbackTextEmbedder; // CLIP 图像的文本查询降级
     private final int imageDim;
     private final int audioDim;
 
@@ -51,16 +68,37 @@ public class PerceptualMemory implements BaseMemory {
     public PerceptualMemory(int textDim, int imageDim, int audioDim,
                             DocumentStore docStore,
                             VectorStore textVecStore, VectorStore imageVecStore, VectorStore audioVecStore) {
-        this.textEmbedder = new EpisodicMemory.TextEmbedder(textDim);
         this.imageDim = imageDim;
         this.audioDim = audioDim;
 
+        // TEXT — EmbedderProvider (BGE 降级链)
+        this.textEmbedder = new EmbedderProvider(textDim);
+
+        // IMAGE — 尝试 CLIP，不可用时降级哈希
+        CLIPOnnxEmbedding clip = null;
+        try {
+            if (CLIPOnnxEmbedding.isModelReady()) {
+                clip = new CLIPOnnxEmbedding();
+            }
+        } catch (Exception e) {
+            System.out.println("[PerceptualMemory] CLIP 模型不可用: " + e.getMessage());
+        }
+        this.clipEmbedder = clip;
+        this.fallbackTextEmbedder = new EpisodicMemory.TextEmbedder(textDim);
+
+        // 存储
         this.docStore = docStore != null ? docStore : new DocumentStore(":memory:");
         this.ownDocStore = docStore == null;
 
+        int actualImageDim = clip != null ? CLIP_DIM : imageDim;
         this.vectorStores.put(MOD_TEXT, textVecStore != null ? textVecStore : new VectorStore(textDim));
-        this.vectorStores.put(MOD_IMAGE, imageVecStore != null ? imageVecStore : new VectorStore(imageDim));
+        this.vectorStores.put(MOD_IMAGE, imageVecStore != null ? imageVecStore : new VectorStore(actualImageDim));
         this.vectorStores.put(MOD_AUDIO, audioVecStore != null ? audioVecStore : new VectorStore(audioDim));
+
+        System.out.println("[PerceptualMemory] 初始化完成"
+                + " | TEXT=" + textEmbedder.getActiveBackend() + "(" + textEmbedder.getDimension() + "维)"
+                + " | IMAGE=" + (clip != null ? "CLIP(512维)" : "Hash(" + imageDim + "维)")
+                + " | AUDIO=Hash(" + audioDim + "维)");
     }
 
     // ==================== 添加 ====================
@@ -104,7 +142,22 @@ public class PerceptualMemory implements BaseMemory {
         String searchModality = targetModality != null ? targetModality : queryModality;
         VectorStore store = vectorStores.getOrDefault(searchModality, vectorStores.get(MOD_TEXT));
 
-        float[] queryVector = encodeData(query, queryModality);
+        // 跨模态检索: 文本查询 → 图像搜索 (CLIP 文本编码器)
+        boolean crossModal = MOD_TEXT.equals(queryModality) && MOD_IMAGE.equals(searchModality);
+
+        float[] queryVector;
+        if (crossModal && clipEmbedder != null) {
+            // CLIP 文本编码 → 在图像向量空间中检索
+            try {
+                queryVector = clipEmbedder.encodeQueryForImage(query);
+            } catch (Exception e) {
+                System.out.println("[PerceptualMemory] CLIP 文本编码失败: " + e.getMessage());
+                queryVector = fallbackTextEmbedder.encode(query);
+            }
+        } else {
+            queryVector = encodeData(query, queryModality);
+        }
+
         List<VectorStore.VectorHit> hits = store.search(queryVector, limit * 5);
 
         // 过滤
@@ -155,24 +208,50 @@ public class PerceptualMemory implements BaseMemory {
 
     private float[] encodeData(String data, String modality) {
         switch (modality) {
-            case MOD_IMAGE:  return encodeImage(data);
-            case MOD_AUDIO:  return encodeAudio(data);
+            case MOD_IMAGE:
+                return encodeImage(data);
+            case MOD_AUDIO:
+                return encodeAudio(data);
             case MOD_TEXT:
-            default:         return textEmbedder.encode(data);
+            default:
+                textEmbedder.register(data);
+                return textEmbedder.encode(data);
         }
     }
 
+    // ---- 图像编码 ----
+
     private float[] encodeImage(String input) {
+        // 1. 尝试 CLIP 图像编码
+        if (clipEmbedder != null) {
+            try {
+                // 先尝试作为文件路径加载
+                File file = new File(input);
+                if (file.exists()) {
+                    return clipEmbedder.encodeImage(input);
+                }
+                // 非文件路径（如 URL 或纯文本描述），用 CLIP 文本编码作为近似
+                return clipEmbedder.encodeQueryForImage(input);
+            } catch (Exception e) {
+                System.out.println("[PerceptualMemory] CLIP 图像编码失败: " + e.getMessage());
+            }
+        }
+
+        // 2. 降级: 确定性哈希（旧行为，保证向后兼容）
         float[] vec = new float[imageDim];
         fillFromHash(vec, "img:" + input);
         return normalize(vec);
     }
+
+    // ---- 音频编码 ----
 
     private float[] encodeAudio(String input) {
         float[] vec = new float[audioDim];
         fillFromHash(vec, "aud:" + input);
         return normalize(vec);
     }
+
+    // ==================== 哈希降级 ====================
 
     private static void fillFromHash(float[] vec, String seed) {
         int h = seed.hashCode();
@@ -235,10 +314,12 @@ public class PerceptualMemory implements BaseMemory {
         return counts;
     }
 
+    public boolean hasCLIP() { return clipEmbedder != null; }
+
     public void clear() {
         for (VectorStore store : vectorStores.values()) store.clear();
         docStore.clearAll();
-        textEmbedder.reset();
+        fallbackTextEmbedder.reset();
     }
 
     /** 持久化所有向量存储 */
@@ -248,6 +329,9 @@ public class PerceptualMemory implements BaseMemory {
 
     public void close() {
         if (ownDocStore) docStore.close();
+        if (clipEmbedder != null) {
+            try { clipEmbedder.close(); } catch (Exception ignored) {}
+        }
     }
 
     // ==================== 内部类型 ====================
