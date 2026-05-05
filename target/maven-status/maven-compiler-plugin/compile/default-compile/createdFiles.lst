@@ -13,6 +13,7 @@ com\example\agent\app\InteractiveAgent.class
 com\example\agent\llm\MyLLM$Builder.class
 com\example\agent\rag\ContextConfig$Builder.class
 com\example\agent\tool\MyAdvancedSearchToolTest.class
+com\example\agent\pattern\ProjectAssistantTest.class
 com\example\agent\tool\MyCalculatorToolTest.class
 com\example\agent\LoadDotenvUtil.class
 com\example\agent\rag\DocumentReader.class
@@ -44,6 +45,7 @@ com\example\agent\memory\WorkingMemory$ScoredItem.class
 com\example\agent\pattern\MyReActAgent.class
 com\example\agent\tool\CalculatorTool.class
 com\example\agent\tool\NoteToolSmokeTest.class
+com\example\agent\pattern\ProjectAssistant.class
 com\example\agent\tool\NoteTool.class
 com\example\agent\pattern\SimpleAgent.class
 com\example\agent\app\PDFLearningAssistant.class

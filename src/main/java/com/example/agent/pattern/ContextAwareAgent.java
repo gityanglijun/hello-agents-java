@@ -86,12 +86,12 @@ public class ContextAwareAgent extends SimpleAgent {
         );
 
         // 2. LLM 调用：最优上下文作为 system prompt
-        List<Map<String, String>> messages = List.of(
-                Map.of("role", "system", "content", optimizedContext),
-                Map.of("role", "user", "content", userInput)
+        List<Message> llmMessages = List.of(
+                new Message(optimizedContext, Message.ROLE_SYSTEM),
+                new Message(userInput, Message.ROLE_USER)
         );
 
-        String response = llm.think(messages);
+        String response = llm.thinkMessages(llmMessages);
         if (response == null || response.isBlank()) {
             response = "（LLM 无响应）";
         }

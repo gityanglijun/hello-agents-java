@@ -1,4 +1,5 @@
 package com.example.agent.pattern;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -71,7 +72,7 @@ public class ReflectionAgent extends Agent {
     public String run(String inputText) {
         System.out.println("🤖 " + name + " 开始反思流程: " + inputText);
 
-        String currentAnswer = llm.think(buildMessages(
+        String currentAnswer = llm.thinkMessages(buildMessages(
                 buildPrompt("initial", Map.of("task", inputText))
         ));
         System.out.println("📝 初始回答生成完成");
@@ -80,7 +81,7 @@ public class ReflectionAgent extends Agent {
         for (int i = 0; i < MAX_REFINE_ITERATIONS; i++) {
             System.out.println("🔄 反思迭代 " + (i + 1) + "/" + MAX_REFINE_ITERATIONS);
 
-            String feedback = llm.think(buildMessages(
+            String feedback = llm.thinkMessages(buildMessages(
                     buildPrompt("reflect", Map.of("task", inputText, "content", currentAnswer))
             ));
 
@@ -89,7 +90,7 @@ public class ReflectionAgent extends Agent {
                 break;
             }
 
-            String improved = llm.think(buildMessages(
+            String improved = llm.thinkMessages(buildMessages(
                     buildPrompt("refine", Map.of("task", inputText, "lastAttempt", currentAnswer, "feedback", feedback))
             ));
             if (improved == null) break;
@@ -117,12 +118,12 @@ public class ReflectionAgent extends Agent {
         return result.trim();
     }
 
-    protected List<Map<String, String>> buildMessages(String prompt) {
-        List<Map<String, String>> messages = new java.util.ArrayList<>();
+    protected List<Message> buildMessages(String prompt) {
+        List<Message> messages = new ArrayList<>();
         if (systemPrompt != null && !systemPrompt.isBlank()) {
-            messages.add(Map.of("role", Message.ROLE_SYSTEM, "content", systemPrompt));
+            messages.add(new Message(systemPrompt, Message.ROLE_SYSTEM));
         }
-        messages.add(Map.of("role", Message.ROLE_USER, "content", prompt));
+        messages.add(new Message(prompt, Message.ROLE_USER));
         return messages;
     }
 }

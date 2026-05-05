@@ -73,7 +73,7 @@ public class ReActAgent extends Agent {
             System.out.println("\n--- 第 {" + step + "} 步 ---");
 
             String prompt = buildReActPrompt(inputText);
-            String response = llm.think(buildMessages(prompt));
+            String response = llm.thinkMessages(buildMessages(prompt));
 
             if (response == null || response.isBlank()) {
                 System.out.println("错误：LLM未能返回有效响应。");
@@ -132,12 +132,12 @@ public class ReActAgent extends Agent {
         return String.format(promptTemplate, toolsDesc, question, historyStr);
     }
 
-    protected List<Map<String, String>> buildMessages(String prompt) {
-        List<Map<String, String>> messages = new ArrayList<>();
+    protected List<Message> buildMessages(String prompt) {
+        List<Message> messages = new ArrayList<>();
         if (systemPrompt != null && !systemPrompt.isBlank()) {
-            messages.add(Map.of("role", Message.ROLE_SYSTEM, "content", systemPrompt));
+            messages.add(new Message(systemPrompt, Message.ROLE_SYSTEM));
         }
-        messages.add(Map.of("role", Message.ROLE_USER, "content", prompt));
+        messages.add(new Message(prompt, Message.ROLE_USER));
         return messages;
     }
 

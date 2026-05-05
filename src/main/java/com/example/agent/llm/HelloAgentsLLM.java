@@ -16,6 +16,7 @@ import java.util.Map;
 
 
 import com.example.agent.LoadDotenvUtil;
+import com.example.agent.Message;
 
 public class HelloAgentsLLM {
 
@@ -111,6 +112,28 @@ public class HelloAgentsLLM {
 
     public String think(List<Map<String,String>> messages){
         return think(messages, (float) 0);
+    }
+
+    // ==================== Message 重载（推荐 API） ====================
+
+    public String thinkMessages(List<Message> messages, Float temperature) {
+        List<Map<String, String>> dicts = new ArrayList<>();
+        for (Message msg : messages) {
+            dicts.add(msg.toDict());
+        }
+        return think(dicts, temperature);
+    }
+
+    public String thinkMessages(List<Message> messages) {
+        return thinkMessages(messages, (float) 0);
+    }
+
+    public java.util.stream.Stream<String> streamThinkMessages(List<Message> messages, Float temperature) {
+        List<Map<String, String>> dicts = new ArrayList<>();
+        for (Message msg : messages) {
+            dicts.add(msg.toDict());
+        }
+        return streamThink(dicts, temperature);
     }
 
     public java.util.stream.Stream<String> streamThink(List<Map<String,String>> messages, Float temperature) {

@@ -30,9 +30,8 @@ public class SimpleAgent extends Agent {
     public String run(String inputText, int maxToolIterations) {
         System.out.println("🤖 " + name + " 正在处理: " + inputText);
 
-        List<Map<String, String>> messages = buildMessages(inputText);
-
-        String response = llm.think(messages);
+        List<Message> messages = buildMessages(inputText);
+        String response = llm.thinkMessages(messages);
         if (response != null) {
             addMessage(new Message(inputText, Message.ROLE_USER));
             addMessage(new Message(response, Message.ROLE_ASSISTANT));
@@ -46,15 +45,13 @@ public class SimpleAgent extends Agent {
         return systemPrompt != null ? systemPrompt : "你是一个有用的AI助手。";
     }
 
-    protected List<Map<String, String>> buildMessages(String inputText) {
-        List<Map<String, String>> messages = new ArrayList<>();
-        messages.add(Map.of("role", Message.ROLE_SYSTEM, "content", getEnhancedSystemPrompt()));
+    protected List<Message> buildMessages(String inputText) {
+        List<Message> messages = new ArrayList<>();
+        messages.add(new Message(getEnhancedSystemPrompt(), Message.ROLE_SYSTEM));
 
-        for (Message msg : history) {
-            messages.add(msg.toDict());
-        }
+        messages.addAll(history);
 
-        messages.add(Map.of("role", Message.ROLE_USER, "content", inputText));
+        messages.add(new Message(inputText, Message.ROLE_USER));
         return messages;
     }
 }
