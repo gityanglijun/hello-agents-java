@@ -1,0 +1,28 @@
+name: weather-mcp-server
+displayName: Weather MCP Server
+description: Real-time weather query MCP server based on wttr.in free API and HelloAgents framework. Supports 12 Chinese cities with temperature, humidity, wind speed, and visibility data.
+version: 1.0.0
+author: HelloAgents Team
+homepage: https://github.com/helloagents/weather-mcp-server
+license: MIT
+categories:
+  - weather
+  - data
+tags:
+  - weather
+  - real-time
+  - helloagents
+  - wttr
+runtime: python
+build:
+  dockerfile: Dockerfile
+  dockerBuildPath: .
+startCommand:
+  type: http
+tools:
+  - name: get_weather
+    description: Get current weather for a city (temperature, humidity, condition, wind speed, visibility)
+  - name: list_supported_cities
+    description: List all supported cities (12 Chinese cities)
+  - name: get_server_info
+    description: Get server metadata and version information

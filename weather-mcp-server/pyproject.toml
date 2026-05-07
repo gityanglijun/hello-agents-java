@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "weather-mcp-server"
+version = "1.0.0"
+description = "Real-time weather query MCP server based on wttr.in free API and HelloAgents framework"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "HelloAgents Team", email = "hello@helloagents.dev"}
+]
+requires-python = ">=3.10"
+dependencies = [
+    "hello-agents>=0.2.1",
+    "requests>=2.31.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/helloagents/weather-mcp-server"
+Repository = "https://github.com/helloagents/weather-mcp-server"
+"Bug Tracker" = "https://github.com/helloagents/weather-mcp-server/issues"
+
+[tool.setuptools]
+py-modules = ["server"]
