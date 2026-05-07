@@ -122,6 +122,42 @@ public class ToolRegistry {
 
     // ========== 工具执行 ==========
 
+    /** Execute tool with already-parsed parameters (preferred path — preserves types). */
+    public String executeTool(String name, Map<String, Object> params) throws Exception {
+        // 优先执行 Tool 对象
+        Tool tool = tools.get(name);
+        if (tool != null) {
+            return tool.run(params);
+        }
+
+        // 其次执行函数式工具（将 Map 序列化为参数字符串）
+        FunctionTool funcTool = functions.get(name);
+        if (funcTool != null) {
+            StringBuilder sb = new StringBuilder();
+            for (var entry : params.entrySet()) {
+                if (!sb.isEmpty()) sb.append(", ");
+                sb.append(entry.getKey()).append("=").append(entry.getValue());
+            }
+            return funcTool.func.apply(sb.toString());
+        }
+
+        // 最后执行旧版 Method 工具
+        ToolEntry entry = methodTools.get(name);
+        if (entry != null) {
+            StringBuilder sb = new StringBuilder();
+            for (var e : params.entrySet()) {
+                if (!sb.isEmpty()) sb.append(", ");
+                sb.append(e.getKey()).append("=").append(e.getValue());
+            }
+            Object result = entry.method.invoke(null, sb.toString());
+            return result != null ? result.toString() : "无返回值";
+        }
+
+        return "❌ 错误:未找到工具 '" + name + "'";
+    }
+
+    /** @deprecated Use {@link #executeTool(String, Map)} to preserve parameter types. */
+    @Deprecated
     public String executeTool(String name, String parameters) throws Exception {
         // 优先执行 Tool 对象
         Tool tool = tools.get(name);
@@ -170,6 +206,40 @@ public class ToolRegistry {
     }
 
     // ========== OpenAI Function Calling Schema ==========
+
+    /** 获取所有已注册 Tool 对象的 OpenAI function calling schema 列表。 */
+    public List<Map<String, Object>> getAllSchemas() {
+        List<Map<String, Object>> schemas = new ArrayList<>();
+        for (String name : tools.keySet()) {
+            Map<String, Object> schema = toOpenaiSchema(name);
+            if (schema != null) {
+                schemas.add(schema);
+            }
+        }
+        // 函数式工具也用简单 schema
+        for (String name : functions.keySet()) {
+            Map<String, Object> func = new LinkedHashMap<>();
+            func.put("name", name);
+            func.put("description", functions.get(name).description);
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("type", "object");
+            params.put("properties", Map.of("input",
+                    Map.of("type", "string", "description", "输入参数")));
+            params.put("required", List.of("input"));
+            func.put("parameters", params);
+
+            Map<String, Object> schema = new LinkedHashMap<>();
+            schema.put("type", "function");
+            schema.put("function", func);
+            schemas.add(schema);
+        }
+        return schemas;
+    }
+
+    /** 获取所有已注册的 Tool 对象（不含函数式工具）。 */
+    public List<Tool> getAllTools() {
+        return new ArrayList<>(tools.values());
+    }
 
     public Map<String, Object> toOpenaiSchema(String name) {
         Tool tool = tools.get(name);

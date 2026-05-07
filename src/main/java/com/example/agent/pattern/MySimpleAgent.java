@@ -79,7 +79,7 @@ public class MySimpleAgent extends SimpleAgent {
         messages.add(Map.of("role", Message.ROLE_SYSTEM, "content", getEnhancedSystemPrompt()));
 
         for (Message msg : history) {
-            messages.add(msg.toDict());
+            messages.add(msg.toSimpleDict());
         }
         messages.add(Map.of("role", Message.ROLE_USER, "content", inputText));
 
@@ -255,7 +255,7 @@ public class MySimpleAgent extends SimpleAgent {
         messages.add(Map.of("role", Message.ROLE_SYSTEM, "content", getEnhancedSystemPrompt()));
 
         for (Message msg : history) {
-            messages.add(msg.toDict());
+            messages.add(msg.toSimpleDict());
         }
         messages.add(Map.of("role", Message.ROLE_USER, "content", inputText));
 

@@ -1,4 +1,7 @@
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\Agent.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\CodebaseMaintainer.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\CodebaseMaintainerDemo.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\CodebaseMaintainerSmokeTest.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\InteractiveAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\MyMain.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\PDFLearningAssistant.java
@@ -34,6 +37,7 @@ E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\nlp\EntityRelationE
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\ContextAwareAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\ContextAwareAgentTest.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\Executor.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\FunctionCallAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\MyPlanAndSolveAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\MyPlanAndSolveAgentTest.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\MyReActAgent.java
@@ -68,6 +72,7 @@ E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\MyAdvancedSear
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\MyCalculatorTool.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\MyCalculatorToolTest.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\NoteTool.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\NoteToolAdapter.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\NoteToolSmokeTest.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\SearchTool.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\TerminalTool.java

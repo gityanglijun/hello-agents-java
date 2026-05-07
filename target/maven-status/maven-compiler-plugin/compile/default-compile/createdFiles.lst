@@ -1,5 +1,6 @@
 com\example\agent\rag\RAGTool$ChunkHit.class
 com\example\agent\embedding\EmbedderProvider$Backend.class
+com\example\agent\app\CodebaseMaintainerSmokeTest.class
 com\example\agent\memory\EpisodicMemory$TextEmbedder.class
 com\example\agent\rag\ContextPacket.class
 com\example\agent\tool\ToolRegistry.class
@@ -7,12 +8,14 @@ com\example\agent\memory\EpisodicMemory$ScoredItem.class
 com\example\agent\memory\PerceptualMemoryTest.class
 com\example\agent\rag\RAGToolTest.class
 com\example\agent\tool\NoteTool$1.class
+com\example\agent\app\CodebaseMaintainerDemo.class
 com\example\agent\tool\ToolChainManager.class
 com\example\agent\embedding\CLIPOnnxEmbedding$BpePair.class
 com\example\agent\app\InteractiveAgent.class
 com\example\agent\llm\MyLLM$Builder.class
 com\example\agent\rag\ContextConfig$Builder.class
 com\example\agent\tool\MyAdvancedSearchToolTest.class
+com\example\agent\app\CodebaseMaintainer.class
 com\example\agent\pattern\ProjectAssistantTest.class
 com\example\agent\tool\MyCalculatorToolTest.class
 com\example\agent\tool\TerminalToolSmokeTest.class
@@ -32,6 +35,7 @@ com\example\agent\pattern\PlanAndSolveAgent$3.class
 com\example\agent\memory\MemoryManager.class
 com\example\agent\pattern\MyReActAgentTest.class
 com\example\agent\pattern\MyReflectionAgentTest.class
+com\example\agent\llm\HelloAgentsLLM$ToolCall.class
 com\example\agent\rag\ContextBuilder.class
 com\example\agent\Config.class
 com\example\agent\memory\BaseMemory.class
@@ -68,13 +72,16 @@ com\example\agent\Message.class
 com\example\agent\memory\SemanticMemory$Entity.class
 com\example\agent\client\SerpApiHttpClient.class
 com\example\agent\embedding\EmbedderProvider.class
+com\example\agent\llm\HelloAgentsLLM$ThinkWithToolsResult.class
 com\example\agent\memory\SemanticMemory$VectorHit.class
+com\example\agent\pattern\FunctionCallAgent.class
 com\example\agent\memory\MemoryManager$MemoryItem.class
 com\example\agent\rag\MarkdownChunker$Paragraph.class
 com\example\agent\pattern\PlanAndSolveAgent$2.class
 com\example\agent\tool\TerminalTool.class
 com\example\agent\store\DocumentStore.class
 com\example\agent\llm\MyLLM.class
+com\example\agent\tool\NoteToolAdapter.class
 com\example\agent\nlp\ChineseTokenizer.class
 com\example\agent\pattern\MyPlanAndSolveAgent.class
 com\example\agent\rag\RAGTool$Document.class
