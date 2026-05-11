@@ -1,8 +1,15 @@
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\Agent.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\BfclCustomEvaluation.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\BfclEvaluationRunner.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\BfclV3ToV4Converter.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\CodebaseMaintainer.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\CodebaseMaintainerDemo.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\CodebaseMaintainerSmokeTest.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\DataGenCompleteFlow.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\GaiaBestPractices.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\GaiaQuickStart.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\InteractiveAgent.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\LLMJudgeDemo.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\MultiAgentDocAssistant.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\MyMain.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\PDFLearningAssistant.java
@@ -10,6 +17,7 @@ E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\PDFLearningAssi
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\ProtocolToolsSmokeTest.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\WeatherAssistantDemo.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\WeatherTool.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\WinRateDemo.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\client\SerpApiHttpClient.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\client\TavilyHttpClient.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\Config.java
@@ -74,7 +82,12 @@ E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\ANPNetwork.jav
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\ANPTool.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\AsyncToolExecutor.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\AsyncToolExecutorTest.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\BFCLEvaluationTool.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\BFCLEvaluator.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\CalculatorTool.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\GAIAEvaluationTool.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\GAIAEvaluator.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\LLMJudge.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\MCPTool.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\MCPWrappedTool.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\MyAdvancedSearchTool.java
@@ -84,6 +97,7 @@ E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\MyCalculatorTo
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\NoteTool.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\NoteToolAdapter.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\NoteToolSmokeTest.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\RLTrainingTool.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\SearchTool.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\ServiceInfo.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\TerminalTool.java
@@ -95,3 +109,4 @@ E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\ToolChainTest.
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\ToolExecutor.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\ToolParameter.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\ToolRegistry.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\WinRateEvaluator.java
