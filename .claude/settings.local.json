@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(mvn compile *)",
-      "Bash(java -cp target/classes EpisodicMemoryTest)"
+      "Bash(java -cp target/classes EpisodicMemoryTest)",
+      "Bash(jar tf *)"
     ]
   }
 }

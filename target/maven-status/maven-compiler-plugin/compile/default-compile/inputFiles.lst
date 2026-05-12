@@ -110,3 +110,10 @@ E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\ToolExecutor.j
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\ToolParameter.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\ToolRegistry.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\tool\WinRateEvaluator.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\trip\model\TripModels.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\trip\service\AmapMcpServer.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\trip\service\AmapService.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\trip\service\MultiAgentTripPlanner.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\trip\service\UnsplashService.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\trip\TripPlannerApp.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\trip\TripPlannerConfig.java

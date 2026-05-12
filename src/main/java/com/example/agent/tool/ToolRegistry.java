@@ -43,13 +43,38 @@ public class ToolRegistry {
 
     // ========== 注册方法 ==========
 
-    /** 注册 Tool 对象 */
+    /** 注册 Tool 对象（默认自动展开可展开工具） */
     public void registerTool(Tool tool) {
-        if (tools.containsKey(tool.name)) {
-            System.out.println("⚠️ 警告:工具 '" + tool.name + "' 已存在，将被覆盖。");
+        registerTool(tool, true);
+    }
+
+    /**
+     * 注册 Tool 对象，可选自动展开。
+     *
+     * 如注册 MCPTool 并启用 auto_expand，则 MCP 服务器中的每个工具
+     * 会被包装为独立的 MCPWrappedTool 分别注册。
+     */
+    public void registerTool(Tool tool, boolean autoExpand) {
+        if (autoExpand && tool.expandable()) {
+            List<? extends Tool> expanded = tool.getExpandedTools();
+            if (!expanded.isEmpty()) {
+                for (Tool subTool : expanded) {
+                    if (tools.containsKey(subTool.name())) {
+                        System.out.println("⚠️ 警告:工具 '" + subTool.name() + "' 已存在，将被覆盖。");
+                    }
+                    tools.put(subTool.name(), subTool);
+                }
+                System.out.println("✅ 工具 '" + tool.name() + "' 已展开为 " + expanded.size() + " 个独立工具");
+                return;
+            }
         }
-        tools.put(tool.name, tool);
-        System.out.println("✅ 工具 '" + tool.name + "' 已注册。");
+
+        // 不展开或无法展开
+        if (tools.containsKey(tool.name())) {
+            System.out.println("⚠️ 警告:工具 '" + tool.name() + "' 已存在，将被覆盖。");
+        }
+        tools.put(tool.name(), tool);
+        System.out.println("✅ 工具 '" + tool.name() + "' 已注册。");
     }
 
     /** 注册函数作为工具（简便方式） */

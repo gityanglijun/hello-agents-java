@@ -37,7 +37,7 @@ public class SimpleAgent extends Agent {
     public SimpleAgent(String name, HelloAgentsLLM llm, String systemPrompt, Config config) {
         super(name, llm, systemPrompt, config);
         this.toolRegistry = null;
-        this.enableToolCalling = false;
+        this.enableToolCalling = true;
     }
 
     public SimpleAgent(String name, HelloAgentsLLM llm, String systemPrompt) {

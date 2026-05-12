@@ -576,6 +576,9 @@ public class MCPTool extends Tool {
         return result;
     }
 
+    @Override
+    public boolean expandable() { return autoExpand && !availableTools.isEmpty(); }
+
     // ==================== 访问器 ====================
 
     public boolean isInitialized() { return initialized; }

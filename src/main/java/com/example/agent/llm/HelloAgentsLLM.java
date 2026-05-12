@@ -101,19 +101,27 @@ public class HelloAgentsLLM {
 
             ChatCompletionCreateParams params = paramsBuilder.build();
 
+            StringBuilder collected = new StringBuilder();
             try (StreamResponse<ChatCompletionChunk> streamResponse =
                      client.chat().completions().createStreaming(params)) {
                 System.out.println("大语言模型响应成功:");
-                StringBuilder collected = new StringBuilder();
                 streamResponse.stream().forEach(chunk -> {
                     String delta = chunk.choices().get(0).delta().content().orElse("");
                     System.out.print(delta);
                     System.out.flush();
                     collected.append(delta);
                 });
-                System.out.println();
-                return collected.toString();
+            } catch (Exception streamError) {
+                // DeepSeek HTTP/2 stream may be reset (CANCEL) after all data is sent.
+                // If we already collected content, return it instead of failing.
+                if (collected.isEmpty()) {
+                    throw streamError;
+                }
+                System.err.println("[LLM] 流读取提前终止（已收到 " + collected.length() + " 字符）: "
+                        + streamError.getMessage());
             }
+            System.out.println();
+            return collected.toString();
         } catch (Exception e) {
             System.err.println("调用LLM API时发生错误: " + e.getMessage());
             e.printStackTrace();
@@ -365,7 +373,10 @@ public class HelloAgentsLLM {
                     client.chat().completions().createStreaming(paramsBuilder.build());
             return streamResponse.stream()
                     .map(chunk -> chunk.choices().get(0).delta().content().orElse(""))
-                    .filter(s -> !s.isEmpty());
+                    .filter(s -> !s.isEmpty())
+                    .onClose(() -> {
+                        try { streamResponse.close(); } catch (Exception ignored) {}
+                    });
         } catch (Exception e) {
             System.err.println("流式调用LLM API时发生错误: " + e.getMessage());
             e.printStackTrace();
