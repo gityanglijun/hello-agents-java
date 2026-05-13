@@ -16,6 +16,10 @@ public class ToolParameter {
         this.defaultValue = defaultValue;
     }
 
+    public ToolParameter(String name, String type, String description, boolean required) {
+        this(name, type, description, required, null);
+    }
+
     public ToolParameter(String name, String type, String description) {
         this(name, type, description, true, null);
     }

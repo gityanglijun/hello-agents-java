@@ -3,8 +3,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import com.example.agent.Config;
 import com.example.agent.llm.HelloAgentsLLM;
@@ -13,8 +11,7 @@ import com.example.agent.tool.ToolRegistry;
 
 public class MySimpleAgent extends SimpleAgent {
 
-    private static final Pattern TOOL_CALL_PATTERN =
-            Pattern.compile("\\[TOOL_CALL:([^:]+):([^\\]]+)\\]");
+    private static final String TOOL_CALL_PREFIX_MY = "[TOOL_CALL:";
 
     private static class ToolCall {
         final String toolName;
@@ -118,7 +115,9 @@ public class MySimpleAgent extends SimpleAgent {
         sb.append("\n## 工具调用格式\n");
         sb.append("当需要使用工具时，请使用以下格式:\n");
         sb.append("`[TOOL_CALL:{tool_name}:{parameters}]`\n");
-        sb.append("例如:`[TOOL_CALL:search:Python编程]` 或 `[TOOL_CALL:memory:recall=用户信息]`\n\n");
+        sb.append("- JSON格式（推荐）: `[TOOL_CALL:note:{\"action\":\"create\",\"title\":\"任务1\"}]`\n");
+        sb.append("- key=value格式: `[TOOL_CALL:search:query=Python编程]`\n");
+        sb.append("- 简单传值: `[TOOL_CALL:search:Python编程]`\n\n");
         sb.append("工具调用结果会自动插入到对话中，然后你可以基于结果继续回答。\n");
 
         return sb.toString();
@@ -183,18 +182,47 @@ public class MySimpleAgent extends SimpleAgent {
 
     // ========== 工具调用解析 ==========
 
+    /** 解析 LLM 回复中的 [TOOL_CALL:name:params] 标记，支持 JSON body 嵌套括号。 */
     private List<ToolCall> parseToolCalls(String text) {
         List<ToolCall> calls = new ArrayList<>();
-        Matcher matcher = TOOL_CALL_PATTERN.matcher(text);
+        if (text == null) return calls;
 
-        while (matcher.find()) {
-            calls.add(new ToolCall(
-                    matcher.group(1).trim(),
-                    matcher.group(2).trim(),
-                    matcher.group(0) // 原始匹配文本
-            ));
+        int searchFrom = 0;
+        while (true) {
+            int start = text.indexOf(TOOL_CALL_PREFIX_MY, searchFrom);
+            if (start == -1) break;
+
+            int bodyStart = start + TOOL_CALL_PREFIX_MY.length();
+            int colon = text.indexOf(':', bodyStart);
+            if (colon == -1) { searchFrom = start + 1; continue; }
+
+            String toolName = text.substring(bodyStart, colon).trim();
+
+            int bodyPos = colon + 1;
+            int depth = 0;
+            boolean inString = false;
+            int bodyEnd = bodyPos;
+
+            for (int i = bodyPos; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (inString) {
+                    if (c == '\\') { i++; continue; }
+                    if (c == '"') inString = false;
+                    continue;
+                }
+                if (c == '"') { inString = true; continue; }
+                if (c == '{' || c == '[') depth++;
+                if (c == '}' || c == ']') {
+                    depth--;
+                    if (c == ']' && depth < 0) { bodyEnd = i; break; }
+                }
+            }
+
+            String body = text.substring(bodyPos, bodyEnd).trim();
+            String original = text.substring(start, bodyEnd + 1);
+            calls.add(new ToolCall(toolName, body, original));
+            searchFrom = bodyEnd + 1;
         }
-
         return calls;
     }
 
@@ -209,13 +237,27 @@ public class MySimpleAgent extends SimpleAgent {
 
     // ========== 智能参数解析 ==========
 
+    @SuppressWarnings("unchecked")
     private Map<String, String> parseToolParameters(String toolName, String parameters) {
         Map<String, String> paramDict = new LinkedHashMap<>();
 
-        if (parameters.contains("=")) {
-            if (parameters.contains(",")) {
-                // 多个参数: action=search,query=Python,limit=3
-                String[] pairs = parameters.split(",");
+        String trimmed = parameters.trim();
+
+        // 1. JSON 格式
+        if (trimmed.startsWith("{")) {
+            try {
+                Map<String, Object> parsed = new com.google.gson.Gson().fromJson(trimmed, Map.class);
+                for (var entry : parsed.entrySet()) {
+                    paramDict.put(entry.getKey(), String.valueOf(entry.getValue()));
+                }
+                return paramDict;
+            } catch (Exception e) { /* fall through */ }
+        }
+
+        // 2. key=value 格式
+        if (trimmed.contains("=")) {
+            if (trimmed.contains(",")) {
+                String[] pairs = trimmed.split(",");
                 for (String pair : pairs) {
                     if (pair.contains("=")) {
                         String[] kv = pair.split("=", 2);
@@ -223,24 +265,24 @@ public class MySimpleAgent extends SimpleAgent {
                     }
                 }
             } else {
-                // 单个参数: key=value
-                String[] kv = parameters.split("=", 2);
+                String[] kv = trimmed.split("=", 2);
                 paramDict.put(kv[0].trim(), kv[1].trim());
             }
-        } else {
-            // 无 key=value 格式，根据工具类型推断
-            switch (toolName) {
-                case "search":
-                    paramDict.put("query", parameters);
-                    break;
-                case "memory":
-                    paramDict.put("action", "search");
-                    paramDict.put("query", parameters);
-                    break;
-                default:
-                    paramDict.put("input", parameters);
-                    break;
-            }
+            return paramDict;
+        }
+
+        // 3. 简单传值
+        switch (toolName) {
+            case "search":
+                paramDict.put("query", trimmed);
+                break;
+            case "memory":
+                paramDict.put("action", "search");
+                paramDict.put("query", trimmed);
+                break;
+            default:
+                paramDict.put("input", trimmed);
+                break;
         }
 
         return paramDict;

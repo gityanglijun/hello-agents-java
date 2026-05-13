@@ -9,8 +9,6 @@ import com.example.agent.tool.ToolParameter;
 import com.example.agent.tool.ToolRegistry;
 
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * 简单对话 Agent，支持可选的工具调用（基于提示词，非 OpenAI function calling）。
@@ -27,9 +25,8 @@ import java.util.regex.Pattern;
  */
 public class SimpleAgent extends Agent {
 
-    /** 解析 LLM 回复中的 [TOOL_CALL:name:params] 标记 */
-    private static final Pattern TOOL_CALL_PATTERN =
-            Pattern.compile("\\[TOOL_CALL:([^:]+):([^\\]]+)\\]");
+    /** 工具调用前缀 */
+    private static final String TOOL_CALL_PREFIX = "[TOOL_CALL:";
 
     private ToolRegistry toolRegistry;
     private boolean enableToolCalling;
@@ -114,17 +111,16 @@ public class SimpleAgent extends Agent {
         sb.append("`[TOOL_CALL:{tool_name}:{parameters}]`\n\n");
 
         sb.append("### 参数格式说明\n");
-        sb.append("1. **多个参数**：使用 `key=value` 格式，用逗号分隔\n");
-        sb.append("   示例：`[TOOL_CALL:calculator_multiply:a=12,b=8]`\n");
-        sb.append("   示例：`[TOOL_CALL:search:query=Python编程]`\n\n");
-        sb.append("2. **单个参数**：直接使用 `key=value`\n");
-        sb.append("   示例：`[TOOL_CALL:search:query=天气查询]`\n\n");
-        sb.append("3. **简单查询**：可以直接传入文本\n");
+        sb.append("1. **JSON格式（推荐）**：使用JSON对象，参数类型准确\n");
+        sb.append("   示例：`[TOOL_CALL:note:{\"action\":\"create\",\"title\":\"任务1\"}]`\n\n");
+        sb.append("2. **key=value格式**：多个参数用逗号分隔\n");
+        sb.append("   示例：`[TOOL_CALL:calculator_multiply:a=12,b=8]`\n\n");
+        sb.append("3. **简单传值**：直接写参数值\n");
         sb.append("   示例：`[TOOL_CALL:search:Python编程]`\n\n");
 
         sb.append("### 重要提示\n");
         sb.append("- 参数名必须与工具定义的参数名完全匹配\n");
-        sb.append("- 数字参数直接写数字，不需要引号：`a=12` 而不是 `a=\"12\"`\n");
+        sb.append("- 推荐使用JSON格式传参，可避免特殊字符歧义\n");
         sb.append("- 工具调用结果会自动插入到对话中，然后你可以基于结果继续回答\n");
 
         return sb.toString();
@@ -251,17 +247,53 @@ public class SimpleAgent extends Agent {
             String original   // 原始匹配文本，用于从响应中移除
     ) {}
 
-    /** 解析 LLM 回复中的 [TOOL_CALL:name:params] 标记。 */
+    /**
+     * 解析 LLM 回复中的 [TOOL_CALL:name:params] 标记。
+     * 使用括号计数法处理 JSON body 中的嵌套 [] 和 {}，兼容 key=value 格式。
+     */
     private List<ToolCallMatch> parseToolCalls(String text) {
         List<ToolCallMatch> calls = new ArrayList<>();
         if (text == null) return calls;
 
-        Matcher m = TOOL_CALL_PATTERN.matcher(text);
-        while (m.find()) {
-            calls.add(new ToolCallMatch(
-                    m.group(1).trim(),
-                    m.group(2).trim(),
-                    m.group(0)));
+        int searchFrom = 0;
+        while (true) {
+            int start = text.indexOf(TOOL_CALL_PREFIX, searchFrom);
+            if (start == -1) break;
+
+            int bodyStart = start + TOOL_CALL_PREFIX.length();
+            int colon = text.indexOf(':', bodyStart);
+            if (colon == -1) { searchFrom = start + 1; continue; }
+
+            String toolName = text.substring(bodyStart, colon).trim();
+
+            // 括号计数：从 ':' 之后开始扫描，正确处理 JSON 中的 {}、[] 和字符串
+            int bodyPos = colon + 1;
+            int depth = 0;
+            boolean inString = false;
+            int bodyEnd = bodyPos;  // fallback: 一直扫描到文本末尾
+
+            for (int i = bodyPos; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (inString) {
+                    if (c == '\\') { i++; continue; }  // 跳过转义字符
+                    if (c == '"') inString = false;
+                    continue;
+                }
+                if (c == '"') { inString = true; continue; }
+                if (c == '{' || c == '[') depth++;
+                if (c == '}' || c == ']') {
+                    depth--;
+                    if (c == ']' && depth < 0) {
+                        bodyEnd = i;
+                        break;
+                    }
+                }
+            }
+
+            String body = text.substring(bodyPos, bodyEnd).trim();
+            String original = text.substring(start, bodyEnd + 1);
+            calls.add(new ToolCallMatch(toolName, body, original));
+            searchFrom = bodyEnd + 1;
         }
         return calls;
     }

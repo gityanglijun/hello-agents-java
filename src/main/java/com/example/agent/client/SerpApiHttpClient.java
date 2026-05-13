@@ -1,4 +1,5 @@
 package com.example.agent.client;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -12,11 +13,11 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
-import com.example.agent.LoadDotenvUtil;
-
+/**
+ * SerpApi HTTP 客户端 — 对齐 Python SerpApi GoogleSearch。
+ */
 public class SerpApiHttpClient {
 
     private static final String API_ENDPOINT = "https://serpapi.com/search";
@@ -24,32 +25,35 @@ public class SerpApiHttpClient {
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
-    /**
-     * 一个基于SerpApi REST API的网页搜索引擎工具。
-     * 直接使用Java HttpClient调用API，无需外部SerpApi客户端库。
-     */
+    /** 文本搜索（兼容旧接口） */
     public static String search(String query) {
-        System.out.println("🔍 正在执行 [SerpApi HttpClient] 网页搜索: " + query);
+        Map<String, String> env = com.example.agent.LoadDotenvUtil.loadEnvFile();
+        String apiKey = env.getOrDefault("SERPAPI_API_KEY", System.getenv("SERPAPI_API_KEY"));
+        if (apiKey == null || apiKey.isBlank()) {
+            return "错误：SERPAPI_API_KEY 未配置。";
+        }
+        Map<String, Object> result = searchStructured(query, apiKey, 3);
+        return formatText(result);
+    }
+
+    /**
+     * 结构化搜索 — 对齐 Python GoogleSearch(params).get_dict()。
+     * @return { organic_results: [{title, link, snippet}], answer_box: {answer, snippet} }
+     */
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> searchStructured(String query, String apiKey, int maxResults) {
+        Map<String, Object> result = new LinkedHashMap<>();
+
         try {
-            // 从环境变量或.env文件获取API密钥
-            Map<String, String> envFile = LoadDotenvUtil.loadEnvFile();
-            String apiKey = envFile.getOrDefault("SERPAPI_API_KEY", System.getenv("SERPAPI_API_KEY"));
-            if (apiKey == null || apiKey.isBlank()) {
-                return "错误：SERPAPI_API_KEY 未在 .env 文件中配置。";
-            }
+            String url = buildUrl(Map.of(
+                    "engine", "google",
+                    "q", query,
+                    "api_key", apiKey,
+                    "gl", "cn",
+                    "hl", "zh-cn",
+                    "num", String.valueOf(maxResults)
+            ));
 
-            // 构建查询参数
-            Map<String, String> params = new HashMap<>();
-            params.put("engine", "google");
-            params.put("q", query);
-            params.put("api_key", apiKey);
-            params.put("gl", "cn");      // 国家代码
-            params.put("hl", "zh-cn");   // 语言代码
-
-            // 构建URL
-            String url = buildUrlWithParams(params);
-
-            // 创建HTTP请求
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .timeout(Duration.ofSeconds(30))
@@ -57,149 +61,121 @@ public class SerpApiHttpClient {
                     .GET()
                     .build();
 
-            // 发送请求
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
-                return "HTTP错误: " + response.statusCode() + " - " + response.body();
+                result.put("organic_results", List.of());
+                result.put("answer_box", null);
+                result.put("error", "HTTP错误: " + response.statusCode());
+                return result;
             }
 
-            // 解析JSON响应
-            JsonObject results = JsonParser.parseString(response.body()).getAsJsonObject();
+            JsonObject json = JsonParser.parseString(response.body()).getAsJsonObject();
 
-            // 智能解析：优先寻找最直接的答案
-            String parsedResult = parseSearchResults(results);
-            if (parsedResult != null) {
-                return parsedResult;
+            // answer_box
+            Map<String, Object> answerBox = null;
+            if (json.has("answer_box") && !json.get("answer_box").isJsonNull()) {
+                JsonObject ab = json.get("answer_box").getAsJsonObject();
+                answerBox = new LinkedHashMap<>();
+                if (ab.has("answer")) answerBox.put("answer", ab.get("answer").getAsString());
+                else if (ab.has("snippet")) answerBox.put("snippet", ab.get("snippet").getAsString());
+                if (ab.has("title")) answerBox.put("title", ab.get("title").getAsString());
             }
+            result.put("answer_box", answerBox);
 
-            return "对不起，没有找到关于 '" + query + "' 的信息。";
+            // organic_results (包含 URL!)
+            List<Map<String, Object>> organicResults = new ArrayList<>();
+            if (json.has("organic_results") && json.get("organic_results").isJsonArray()) {
+                JsonArray arr = json.get("organic_results").getAsJsonArray();
+                for (int i = 0; i < Math.min(maxResults, arr.size()); i++) {
+                    JsonObject item = arr.get(i).getAsJsonObject();
+                    Map<String, Object> entry = new LinkedHashMap<>();
+                    entry.put("title", jsonStr(item, "title", ""));
+                    entry.put("link", jsonStr(item, "link", ""));
+                    entry.put("snippet", jsonStr(item, "snippet", ""));
+                    organicResults.add(entry);
+                }
+            }
+            result.put("organic_results", organicResults);
+
+            // knowledge_graph
+            if (json.has("knowledge_graph") && !json.get("knowledge_graph").isJsonNull()) {
+                JsonObject kg = json.get("knowledge_graph").getAsJsonObject();
+                Map<String, Object> kgMap = new LinkedHashMap<>();
+                if (kg.has("description")) kgMap.put("description", kg.get("description").getAsString());
+                if (kg.has("title")) kgMap.put("title", kg.get("title").getAsString());
+                result.put("knowledge_graph", kgMap);
+            }
 
         } catch (IOException | InterruptedException e) {
-            return "搜索时发生错误: " + e.getMessage();
+            result.put("organic_results", List.of());
+            result.put("answer_box", null);
+            result.put("error", "搜索时发生错误: " + e.getMessage());
         } catch (Exception e) {
-            return "搜索时发生未知错误: " + e.getMessage();
+            result.put("organic_results", List.of());
+            result.put("answer_box", null);
+            result.put("error", "搜索时发生未知错误: " + e.getMessage());
         }
+
+        return result;
     }
 
-    private static String buildUrlWithParams(Map<String, String> params) {
-        StringBuilder urlBuilder = new StringBuilder(API_ENDPOINT);
-        urlBuilder.append("?");
+    private static String formatText(Map<String, Object> result) {
+        StringBuilder sb = new StringBuilder();
 
+        @SuppressWarnings("unchecked")
+        Map<String, Object> answerBox = (Map<String, Object>) result.get("answer_box");
+        if (answerBox != null) {
+            String answer = (String) answerBox.getOrDefault("answer",
+                    answerBox.getOrDefault("snippet", ""));
+            if (!answer.isBlank()) {
+                sb.append("💡 直接答案: ").append(answer).append("\n\n");
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> results = (List<Map<String, Object>>) result.getOrDefault("organic_results", List.of());
+        if (!results.isEmpty()) {
+            sb.append("🔗 相关结果:\n");
+            for (int i = 0; i < results.size(); i++) {
+                Map<String, Object> item = results.get(i);
+                sb.append("[").append(i + 1).append("] ")
+                        .append(item.getOrDefault("title", "")).append("\n");
+                String snippet = (String) item.getOrDefault("snippet", "");
+                if (!snippet.isBlank()) {
+                    sb.append("    ").append(snippet).append("\n");
+                }
+                String link = (String) item.getOrDefault("link", "");
+                if (!link.isBlank()) {
+                    sb.append("    来源: ").append(link).append("\n");
+                }
+                sb.append("\n");
+            }
+        }
+
+        return sb.toString().trim();
+    }
+
+    // ==================== 工具方法 ====================
+
+    private static String buildUrl(Map<String, String> params) {
+        StringBuilder sb = new StringBuilder(API_ENDPOINT);
+        sb.append("?");
         boolean first = true;
         for (Map.Entry<String, String> entry : params.entrySet()) {
-            if (!first) {
-                urlBuilder.append("&");
-            }
-            urlBuilder.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8))
-                     .append("=")
-                     .append(URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
+            if (!first) sb.append("&");
+            sb.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8))
+              .append("=")
+              .append(URLEncoder.encode(entry.getValue(), StandardCharsets.UTF_8));
             first = false;
         }
-
-        return urlBuilder.toString();
+        return sb.toString();
     }
 
-    private static String parseSearchResults(JsonObject results) {
-        // 1. 检查answer_box_list
-        if (results.has("answer_box_list")) {
-            JsonElement answerBoxList = results.get("answer_box_list");
-            if (answerBoxList.isJsonArray()) {
-                StringBuilder sb = new StringBuilder();
-                for (JsonElement item : answerBoxList.getAsJsonArray()) {
-                    if (item.isJsonPrimitive()) {
-                        sb.append(item.getAsString()).append("\n");
-                    } else if (item.isJsonObject()) {
-                        JsonObject obj = item.getAsJsonObject();
-                        // 尝试提取可能的文本字段
-                        if (obj.has("answer")) {
-                            sb.append(obj.get("answer").getAsString()).append("\n");
-                        } else if (obj.has("text")) {
-                            sb.append(obj.get("text").getAsString()).append("\n");
-                        } else if (obj.has("title")) {
-                            sb.append(obj.get("title").getAsString()).append("\n");
-                        }
-                    }
-                }
-                String result = sb.toString().trim();
-                if (!result.isEmpty()) {
-                    return result;
-                }
-            }
+    private static String jsonStr(JsonObject obj, String key, String defaultVal) {
+        if (obj.has(key) && !obj.get(key).isJsonNull()) {
+            return obj.get(key).getAsString();
         }
-
-        // 2. 检查answer_box
-        if (results.has("answer_box")) {
-            JsonElement answerBox = results.get("answer_box");
-            if (answerBox.isJsonObject()) {
-                JsonObject answerBoxObj = answerBox.getAsJsonObject();
-                if (answerBoxObj.has("answer")) {
-                    return answerBoxObj.get("answer").getAsString();
-                } else if (answerBoxObj.has("text")) {
-                    return answerBoxObj.get("text").getAsString();
-                } else if (answerBoxObj.has("title")) {
-                    return answerBoxObj.get("title").getAsString();
-                } else if (answerBoxObj.has("snippet")) {
-                    return answerBoxObj.get("snippet").getAsString();
-                }
-            }
-        }
-
-        // 3. 检查knowledge_graph
-        if (results.has("knowledge_graph")) {
-            JsonElement knowledgeGraph = results.get("knowledge_graph");
-            if (knowledgeGraph.isJsonObject()) {
-                JsonObject kgObj = knowledgeGraph.getAsJsonObject();
-                if (kgObj.has("description")) {
-                    return kgObj.get("description").getAsString();
-                } else if (kgObj.has("title")) {
-                    return kgObj.get("title").getAsString();
-                } else if (kgObj.has("text")) {
-                    return kgObj.get("text").getAsString();
-                }
-            }
-        }
-
-        // 4. 检查organic_results
-        if (results.has("organic_results")) {
-            JsonElement organicResults = results.get("organic_results");
-            if (organicResults.isJsonArray()) {
-                JsonArray organicArray = organicResults.getAsJsonArray();
-                if (organicArray.size() > 0) {
-                    StringBuilder snippets = new StringBuilder();
-                    int limit = Math.min(3, organicArray.size());
-                    for (int i = 0; i < limit; i++) {
-                        JsonElement result = organicArray.get(i);
-                        if (result.isJsonObject()) {
-                            JsonObject resultObj = result.getAsJsonObject();
-                            String title = resultObj.has("title")
-                                ? resultObj.get("title").getAsString()
-                                : "";
-                            String snippet = resultObj.has("snippet")
-                                ? resultObj.get("snippet").getAsString()
-                                : "";
-                            if (!title.isEmpty() || !snippet.isEmpty()) {
-                                snippets.append("[").append(i + 1).append("] ")
-                                       .append(title).append("\n").append(snippet)
-                                       .append("\n\n");
-                            }
-                        }
-                    }
-                    String result = snippets.toString().trim();
-                    if (!result.isEmpty()) {
-                        return result;
-                    }
-                }
-            }
-        }
-
-        return null;
-    }
-
-    public static void main(String[] args) {
-        // 测试方法
-        String result = search("Java快速排序算法");
-        System.out.println("搜索结果:");
-        System.out.println(result);
+        return defaultVal;
     }
 }

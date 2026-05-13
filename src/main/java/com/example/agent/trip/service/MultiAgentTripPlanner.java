@@ -71,8 +71,9 @@ public class MultiAgentTripPlanner {
             你必须使用工具来搜索景点!不要自己编造景点信息!
 
             **工具调用格式:**
-            使用amap_text_search工具时,必须严格按照以下格式:
-            `[TOOL_CALL:amap_text_search:keywords=景点关键词,city=城市名]`
+            使用amap_text_search工具时,支持以下格式:
+            - key=value格式: `[TOOL_CALL:amap_text_search:keywords=景点关键词,city=城市名]`
+            - JSON格式: `[TOOL_CALL:amap_text_search:{"keywords":"景点关键词","city":"城市名"}]`
 
             **示例:**
             用户: "搜索北京的历史文化景点"
@@ -84,7 +85,6 @@ public class MultiAgentTripPlanner {
             **注意:**
             1. 必须使用工具,不要直接回答
             2. 格式必须完全正确,包括方括号和冒号
-            3. 参数用逗号分隔
             """;
 
     private static final String WEATHER_AGENT_PROMPT = """
@@ -94,8 +94,9 @@ public class MultiAgentTripPlanner {
             你必须使用工具来查询天气!不要自己编造天气信息!
 
             **工具调用格式:**
-            使用amap_weather工具时,必须严格按照以下格式:
-            `[TOOL_CALL:amap_weather:city=城市名]`
+            使用amap_weather工具时,支持以下格式:
+            - key=value格式: `[TOOL_CALL:amap_weather:city=城市名]`
+            - JSON格式: `[TOOL_CALL:amap_weather:{"city":"城市名"}]`
 
             **示例:**
             用户: "查询北京天气"
@@ -103,7 +104,6 @@ public class MultiAgentTripPlanner {
 
             **注意:**
             1. 必须使用工具,不要直接回答
-            2. 格式必须完全正确
             """;
 
     private static final String HOTEL_AGENT_PROMPT = """
@@ -113,8 +113,9 @@ public class MultiAgentTripPlanner {
             你必须使用工具来搜索酒店!不要自己编造酒店信息!
 
             **工具调用格式:**
-            使用amap_text_search工具搜索酒店时,必须严格按照以下格式:
-            `[TOOL_CALL:amap_text_search:keywords=酒店,city=城市名]`
+            使用amap_text_search工具搜索酒店时,支持以下格式:
+            - key=value格式: `[TOOL_CALL:amap_text_search:keywords=酒店,city=城市名]`
+            - JSON格式: `[TOOL_CALL:amap_text_search:{"keywords":"酒店","city":"城市名"}]`
 
             **示例:**
             用户: "搜索北京的酒店"
