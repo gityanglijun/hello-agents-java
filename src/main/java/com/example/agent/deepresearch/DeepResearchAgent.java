@@ -3,7 +3,7 @@ package com.example.agent.deepresearch;
 import com.example.agent.deepresearch.model.DeepResearchModels.*;
 import com.example.agent.deepresearch.service.*;
 import com.example.agent.llm.HelloAgentsLLM;
-import com.example.agent.pattern.SimpleAgent;
+import com.example.agent.pattern.ToolAwareSimpleAgent;
 import com.example.agent.tool.NoteTool;
 import com.example.agent.tool.NoteToolAdapter;
 import com.example.agent.tool.ToolRegistry;
@@ -27,9 +27,10 @@ public class DeepResearchAgent {
     private final ToolRegistry toolRegistry;
     private final ToolCallTracker toolTracker;
     private final NoteTool noteTool;
+    private final java.util.concurrent.locks.ReentrantLock stateLock = new java.util.concurrent.locks.ReentrantLock();
 
-    private final SimpleAgent todoAgent;
-    private final SimpleAgent reportAgent;
+    private final ToolAwareSimpleAgent todoAgent;
+    private final ToolAwareSimpleAgent reportAgent;
 
     private final PlanningService planning;
     private final SearchService search;
@@ -95,16 +96,10 @@ public class DeepResearchAgent {
 
     // ==================== Agent 创建 ====================
 
-    private SimpleAgent createToolAwareAgent(String name, String systemPrompt) {
-        SimpleAgent agent = new SimpleAgent(name, llm, systemPrompt);
-        if (toolRegistry != null && !toolRegistry.listTools().isEmpty()) {
-            for (String toolName : toolRegistry.listTools()) {
-                var tool = toolRegistry.getTool(toolName);
-                if (tool != null) {
-                    agent.addTool(tool);
-                }
-            }
-        }
+    private ToolAwareSimpleAgent createToolAwareAgent(String name, String systemPrompt) {
+        ToolAwareSimpleAgent agent = new ToolAwareSimpleAgent(name, llm, systemPrompt,
+                toolTracker::record);
+        ToolAwareSimpleAgent.attachRegistry(agent, toolRegistry);
         return agent;
     }
 
@@ -262,6 +257,7 @@ public class DeepResearchAgent {
 
         state.getWebResearchResults().add(context);
         state.getSourcesGathered().add(context);
+        state.setResearchLoopCount(state.getResearchLoopCount() + 1);
 
         task.setSourcesSummary(TextProcessingUtils.formatSources(
                 payload.stream().map(p -> {
@@ -310,8 +306,14 @@ public class DeepResearchAgent {
 
         // 准备上下文 & 来源摘要（提前构建，供 sources 和 completed 事件共用）
         String context = search.prepareResearchContext(searchResult, config);
-        state.getWebResearchResults().add(context);
-        state.getSourcesGathered().add(context);
+        stateLock.lock();
+        try {
+            state.getWebResearchResults().add(context);
+            state.getSourcesGathered().add(context);
+            state.setResearchLoopCount(state.getResearchLoopCount() + 1);
+        } finally {
+            stateLock.unlock();
+        }
 
         task.setSourcesSummary(TextProcessingUtils.formatSources(
                 payload.stream().map(p -> {
@@ -336,16 +338,15 @@ public class DeepResearchAgent {
         summarisingEvent.put("message", "正在生成总结...");
         eventQueue.add(summarisingEvent);
 
-        String summary = summarization.summarizeTask(state, task, context);
+        String summary = summarization.streamTaskSummary(state, task, context, chunk -> {
+            Map<String, Object> chunkEvent = new LinkedHashMap<>();
+            chunkEvent.put("type", "task_summary_chunk");
+            chunkEvent.put("task_id", task.getId());
+            chunkEvent.put("content", chunk);
+            eventQueue.add(chunkEvent);
+        });
         task.setSummary(summary);
         task.setStatus("completed");
-
-        // 发送总结块
-        Map<String, Object> summaryEvent = new LinkedHashMap<>();
-        summaryEvent.put("type", "task_summary_chunk");
-        summaryEvent.put("task_id", task.getId());
-        summaryEvent.put("content", summary);
-        eventQueue.add(summaryEvent);
 
         // 发送任务完成状态（前端依赖此事件更新进度和状态标签）
         Map<String, Object> completedEvent = new LinkedHashMap<>();

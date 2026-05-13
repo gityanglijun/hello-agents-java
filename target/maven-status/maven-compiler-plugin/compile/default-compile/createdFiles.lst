@@ -64,6 +64,7 @@ com\example\agent\trip\service\AmapMcpServer.class
 com\example\agent\memory\SemanticMemory$Entity.class
 com\example\agent\trip\model\TripModels$TripPlan.class
 com\example\agent\app\MultiAgentDocAssistant.class
+com\example\agent\pattern\ToolAwareSimpleAgent.class
 com\example\agent\memory\SemanticMemory$VectorHit.class
 com\example\agent\pattern\FunctionCallAgent.class
 com\example\agent\memory\MemoryManager$MemoryItem.class

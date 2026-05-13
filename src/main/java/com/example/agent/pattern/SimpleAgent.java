@@ -86,10 +86,15 @@ public class SimpleAgent extends Agent {
                 && !toolRegistry.listTools().isEmpty();
     }
 
+    /** 供子类访问工具注册表。 */
+    protected ToolRegistry getToolRegistry() {
+        return toolRegistry;
+    }
+
     // ==================== 系统提示词 ====================
 
     /** 构建增强的系统提示词，包含工具信息。仅在启用工具且有可用工具时注入。 */
-    protected String getEnhancedSystemPrompt() {
+    public String getEnhancedSystemPrompt() {
         String basePrompt = systemPrompt != null ? systemPrompt : "你是一个有用的AI助手。";
 
         if (!hasTools()) {
@@ -300,8 +305,8 @@ public class SimpleAgent extends Agent {
 
     // ==================== 工具执行 ====================
 
-    /** 执行单个工具调用。 */
-    private String executeToolCall(String toolName, String parameters) {
+    /** 执行单个工具调用。子类可覆盖以注入监听逻辑。 */
+    protected String executeToolCall(String toolName, String parameters) {
         if (toolRegistry == null) {
             return "❌ 错误：未配置工具注册表";
         }
@@ -330,7 +335,7 @@ public class SimpleAgent extends Agent {
      *   4. 直接传值 (简单场景)
      */
     @SuppressWarnings("unchecked")
-    private Map<String, Object> parseToolParameters(Tool tool, String parameters) {
+    protected Map<String, Object> parseToolParameters(Tool tool, String parameters) {
         Map<String, Object> paramDict = new LinkedHashMap<>();
 
         String trimmed = parameters.trim();

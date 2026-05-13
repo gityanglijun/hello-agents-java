@@ -96,7 +96,7 @@ public class MySimpleAgent extends SimpleAgent {
     }
 
     @Override
-    protected String getEnhancedSystemPrompt() {
+    public String getEnhancedSystemPrompt() {
         String basePrompt = super.getEnhancedSystemPrompt();
 
         if (!enableToolCalling || toolRegistry == null) {
@@ -226,7 +226,8 @@ public class MySimpleAgent extends SimpleAgent {
         return calls;
     }
 
-    private String executeToolCall(String toolName, String parameters) {
+    @Override
+    protected String executeToolCall(String toolName, String parameters) {
         try {
             String result = toolRegistry.executeTool(toolName, parameters);
             return "🔧 工具 " + toolName + " 执行结果:\n" + result;

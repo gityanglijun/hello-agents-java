@@ -78,6 +78,7 @@ E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\ProjectAssi
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\ReActAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\ReflectionAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\SimpleAgent.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\pattern\ToolAwareSimpleAgent.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\rag\ContextBuilder.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\rag\ContextConfig.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\rag\ContextPacket.java

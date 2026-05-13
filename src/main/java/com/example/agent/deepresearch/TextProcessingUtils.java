@@ -9,19 +9,22 @@ public final class TextProcessingUtils {
 
     private static final int CHARS_PER_TOKEN = 4;
 
-    /** 移除 LLM 回复中的 &lt;think&gt;...&lt;/think&gt; 段落（支持嵌套）。 */
+    /** 移除 LLM 回复中的 &lt;think&gt;...&lt;/think&gt; 段落（支持嵌套）。
+     *  流式场景下若标签不完整（无匹配的 &lt;/think&gt;），保留原文不做截断。 */
     public static String stripThinkingTokens(String text) {
         if (text == null || text.isBlank()) return text != null ? text : "";
 
         StringBuilder result = new StringBuilder();
         int depth = 0;
         int lastEnd = 0;
+        int outerThinkStart = -1;
 
         int i = 0;
         while (i < text.length()) {
             if (text.startsWith("<think>", i)) {
                 if (depth == 0) {
                     result.append(text, lastEnd, i);
+                    outerThinkStart = i;
                 }
                 depth++;
                 i += 7;
@@ -29,6 +32,7 @@ public final class TextProcessingUtils {
                 depth--;
                 if (depth == 0) {
                     lastEnd = i + 8;
+                    outerThinkStart = -1;
                 }
                 i += 8;
             } else {
@@ -36,19 +40,76 @@ public final class TextProcessingUtils {
             }
         }
 
-        if (depth == 0 && lastEnd > 0) {
+        if (depth > 0) {
+            // 流式场景：<think> 未闭合，恢复被截断的内容
+            result.append(text, outerThinkStart, text.length());
+        } else if (depth == 0 && lastEnd > 0) {
             result.append(text, lastEnd, text.length());
         } else if (depth == 0 && lastEnd == 0) {
-            return text; // no thinking tokens found
+            return text;
         }
 
         return result.toString().trim();
     }
 
-    /** 移除 LLM 回复中的 [TOOL_CALL:...] 标记。 */
+    /** 移除 LLM 回复中的 [TOOL_CALL:...] 标记（括号计数法，正确处理 JSON 中的嵌套 []）。
+     *  流式场景下若标记不完整（无匹配的 ']'），保留原文不做截断。 */
     public static String stripToolCalls(String text) {
         if (text == null || text.isBlank()) return text != null ? text : "";
-        return text.replaceAll("\\[TOOL_CALL:[^\\]]*\\]", "").trim();
+
+        StringBuilder result = new StringBuilder();
+        int searchFrom = 0;
+
+        while (searchFrom < text.length()) {
+            int start = text.indexOf("[TOOL_CALL:", searchFrom);
+            if (start == -1) {
+                result.append(text, searchFrom, text.length());
+                break;
+            }
+
+            result.append(text, searchFrom, start);
+
+            int bodyStart = start + "[TOOL_CALL:".length();
+            int colon = text.indexOf(':', bodyStart);
+            if (colon == -1) {
+                result.append(text, start, text.length());
+                break;
+            }
+
+            // 括号计数：从 ':' 之后扫描，正确处理 JSON 中的 {}、[] 和字符串
+            int bodyPos = colon + 1;
+            int depth = 0;
+            boolean inString = false;
+            int bodyEnd = -1;
+
+            for (int i = bodyPos; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (inString) {
+                    if (c == '\\') { i++; continue; }
+                    if (c == '"') inString = false;
+                    continue;
+                }
+                if (c == '"') { inString = true; continue; }
+                if (c == '{' || c == '[') depth++;
+                if (c == '}' || c == ']') {
+                    depth--;
+                    if (c == ']' && depth < 0) {
+                        bodyEnd = i;
+                        break;
+                    }
+                }
+            }
+
+            if (bodyEnd == -1) {
+                // 流式场景：标记不完整，保留从 start 开始的全部原文
+                result.append(text, start, text.length());
+                break;
+            }
+
+            searchFrom = bodyEnd + 1;
+        }
+
+        return result.toString().trim();
     }
 
     /** 将搜索结果格式化为简要来源列表。 */

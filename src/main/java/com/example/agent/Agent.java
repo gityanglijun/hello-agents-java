@@ -42,6 +42,8 @@ public abstract class Agent {
         return new ArrayList<>(history);
     }
 
+    public HelloAgentsLLM getLlm() { return llm; }
+
     @Override
     public String toString() {
         return "Agent(name=" + name + ", provider=" + llm.provider + ")";

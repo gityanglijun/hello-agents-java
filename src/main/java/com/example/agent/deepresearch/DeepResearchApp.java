@@ -21,7 +21,6 @@ public class DeepResearchApp {
 
     public static void main(String[] args) {
         DeepResearchConfig config = DeepResearchConfig.fromEnv();
-        DeepResearchAgent agent = new DeepResearchAgent(config);
 
         System.out.println("===== HelloAgents 深度研究助手 =====");
         System.out.println("LLM 模型: " + config.getLlmModelId());
@@ -54,13 +53,15 @@ public class DeepResearchApp {
                 return;
             }
 
-            // 如果请求指定了 search_api，覆盖配置
+            // 每次请求创建独立的 config 和 agent（对齐 Python，避免并发 config 污染）
+            DeepResearchConfig requestConfig = DeepResearchConfig.fromEnv();
             if (req.getSearchApi() != null && !req.getSearchApi().isBlank()) {
-                config.setSearchApi(req.getSearchApi());
+                requestConfig.setSearchApi(req.getSearchApi());
             }
 
             System.out.println("\n📨 收到研究请求: " + req.getTopic());
-            SummaryStateOutput output = agent.run(req.getTopic());
+            DeepResearchAgent requestAgent = new DeepResearchAgent(requestConfig);
+            SummaryStateOutput output = requestAgent.run(req.getTopic());
 
             List<Map<String, Object>> taskMaps = new ArrayList<>();
             for (TodoItem t : output.getTodoItems()) {
@@ -88,8 +89,10 @@ public class DeepResearchApp {
                 return;
             }
 
+            // 每次请求创建独立的 config 和 agent（对齐 Python）
+            DeepResearchConfig requestConfig = DeepResearchConfig.fromEnv();
             if (req.getSearchApi() != null && !req.getSearchApi().isBlank()) {
-                config.setSearchApi(req.getSearchApi());
+                requestConfig.setSearchApi(req.getSearchApi());
             }
 
             ctx.contentType("text/event-stream");
@@ -97,7 +100,8 @@ public class DeepResearchApp {
             ctx.header("Connection", "keep-alive");
 
             try {
-                agent.runStream(req.getTopic(), eventJson -> {
+                DeepResearchAgent requestAgent = new DeepResearchAgent(requestConfig);
+                requestAgent.runStream(req.getTopic(), eventJson -> {
                     try {
                         ctx.outputStream().write(("data: " + eventJson + "\n\n").getBytes("UTF-8"));
                         ctx.outputStream().flush();
