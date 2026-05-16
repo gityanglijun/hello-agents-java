@@ -10,6 +10,7 @@
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
+      <module name="cyber-town-backend" target="17" />
       <module name="hello-agents-java" target="1.8" />
     </bytecodeTargetLevel>
   </component>

@@ -1,4 +1,5 @@
 com\example\agent\memory\EpisodicMemory$TextEmbedder.class
+com\cybertown\agent\RelationshipManager.class
 com\example\agent\tool\BFCLEvaluationTool.class
 com\example\agent\deepresearch\service\ReportingService.class
 com\example\agent\tool\ToolRegistry.class
@@ -31,6 +32,7 @@ com\example\agent\memory\BaseMemory.class
 com\example\agent\tool\BFCLEvaluator.class
 com\example\agent\pattern\MyReflectionAgent.class
 com\example\agent\trip\service\MultiAgentTripPlanner.class
+com\cybertown\agent\NpcBatchGenerator.class
 com\example\agent\trip\model\TripModels$POISearchResponse.class
 com\example\agent\tool\A2ATool$2.class
 com\example\agent\tool\BFCLEvaluator$4.class
@@ -59,6 +61,7 @@ com\example\agent\trip\service\AmapMcpServer$ToolExecutor.class
 com\example\agent\tool\WinRateEvaluator$Comparison.class
 com\example\agent\tool\GAIAEvaluator$AgentRunner.class
 com\example\agent\tool\GAIAEvaluator.class
+com\cybertown\agent\NpcBatchGenerator$2.class
 com\example\agent\store\DocumentStore$1.class
 com\example\agent\trip\service\AmapMcpServer.class
 com\example\agent\memory\SemanticMemory$Entity.class
@@ -100,9 +103,11 @@ com\example\agent\app\MyMain.class
 com\example\agent\memory\SemanticMemory.class
 com\example\agent\trip\model\TripModels$RouteResponse.class
 com\example\agent\pattern\Executor.class
+com\cybertown\agent\NpcConfig.class
 com\example\agent\store\VectorStore.class
 com\example\agent\embedding\CLIPOnnxEmbedding.class
 com\example\agent\tool\ANPTool.class
+com\cybertown\agent\NpcAgentManager.class
 com\example\agent\pattern\ContextAwareAgentTest.class
 com\example\agent\deepresearch\DeepResearchApp.class
 com\example\agent\tool\ToolParameter.class
@@ -110,6 +115,7 @@ com\example\agent\app\GaiaQuickStart.class
 com\example\agent\trip\model\TripModels$Attraction.class
 com\example\agent\embedding\LLMEmbeddingClient.class
 com\example\agent\memory\WorkingMemory$TfidfEntry.class
+com\cybertown\agent\NpcBatchGenerator$1.class
 com\example\agent\rag\RAGTool$Chunk.class
 com\example\agent\rag\MarkdownChunker.class
 com\example\agent\tool\GAIAEvaluator$3.class
@@ -139,13 +145,17 @@ com\example\agent\app\DataGenCompleteFlow.class
 com\example\agent\deepresearch\DeepResearchConfig.class
 com\example\agent\tool\ToolChainManager.class
 com\example\agent\tool\MyAdvancedSearchToolTest.class
+com\cybertown\model\GameState.class
 com\example\agent\tool\LLMJudge$JudgeStatistics.class
 com\example\agent\tool\MyCalculatorToolTest.class
 com\example\agent\app\ProtocolToolsSmokeTest.class
+com\cybertown\service\StateManager.class
 com\example\agent\tool\TerminalToolSmokeTest.class
+com\cybertown\model\Npc.class
 com\example\agent\tool\WinRateEvaluator.class
 com\example\agent\pattern\MySimpleAgentTest.class
 com\example\agent\Agent.class
+com\cybertown\agent\RelationshipManager$2.class
 com\example\agent\app\DataGenCompleteFlow$1.class
 com\example\agent\app\PDFLearningAssistantTest.class
 com\example\agent\pattern\PlanAndSolveAgent$3.class
@@ -157,12 +167,15 @@ com\example\agent\trip\service\MultiAgentTripPlanner$2.class
 com\example\agent\memory\SemanticMemory$CombinedScore.class
 com\example\agent\deepresearch\TextProcessingUtils.class
 com\example\agent\trip\model\TripModels$WeatherInfo.class
+com\cybertown\CyberTownApp.class
 com\example\agent\deepresearch\service\SearchService.class
 com\example\agent\memory\WorkingMemory.class
 com\example\agent\tool\ANPDiscovery.class
 com\example\agent\pattern\MyPlanAndSolveAgentTest.class
 com\example\agent\tool\ToolRegistry$FunctionTool.class
+com\cybertown\model\Player.class
 com\example\agent\nlp\EntityRelationExtractor.class
+com\cybertown\agent\RelationshipManager$1.class
 com\example\agent\tool\WinRateEvaluator$1.class
 com\example\agent\memory\WorkingMemory$ScoredItem.class
 com\example\agent\trip\service\UnsplashService$1.class
@@ -193,11 +206,13 @@ com\example\agent\client\SerpApiHttpClient.class
 com\example\agent\embedding\EmbedderProvider.class
 com\example\agent\llm\HelloAgentsLLM$ThinkWithToolsResult.class
 com\example\agent\tool\RLTrainingTool$RewardFn.class
+com\cybertown\CyberTownApp$1.class
 com\example\agent\rag\MarkdownChunker$Paragraph.class
 com\example\agent\pattern\PlanAndSolveAgent$2.class
 com\example\agent\tool\ANPNetwork.class
 com\example\agent\tool\TerminalTool.class
 com\example\agent\app\BfclCustomEvaluation.class
+com\cybertown\util\Logger.class
 com\example\agent\app\LLMJudgeDemo.class
 com\example\agent\memory\MemoryConfig.class
 com\example\agent\trip\model\TripModels$DayPlan.class
@@ -215,6 +230,7 @@ com\example\agent\deepresearch\model\DeepResearchModels$ResearchResponse.class
 com\example\agent\tool\RLTrainingTool.class
 com\example\agent\trip\model\TripModels.class
 com\example\agent\deepresearch\service\ToolCallTracker.class
+com\cybertown\config\AppConfig.class
 com\example\agent\tool\ToolExecutor.class
 com\example\agent\tool\RLTrainingTool$1.class
 com\example\agent\tool\BFCLEvaluator$LlmCaller.class
@@ -222,7 +238,9 @@ com\example\agent\rag\RAGTool.class
 com\example\agent\store\GraphStore.class
 com\example\agent\tool\Tool.class
 com\example\agent\tool\NoteTool$Note.class
+com\cybertown\model\Dialogue.class
 com\example\agent\tool\ANPNetwork$Node.class
+com\cybertown\agent\NpcConfig$NpcRole.class
 com\example\agent\store\GraphStore$EntityData.class
 com\example\agent\app\WeatherTool$1.class
 com\example\agent\pattern\ReflectionAgent.class

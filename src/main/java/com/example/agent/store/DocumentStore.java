@@ -24,7 +24,9 @@ public class DocumentStore implements AutoCloseable {
             }
             conn = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
             if (!isMemory) {
-                conn.createStatement().execute("PRAGMA journal_mode=WAL");
+                try (Statement pragmaStmt = conn.createStatement()) {
+                    pragmaStmt.execute("PRAGMA journal_mode=WAL");
+                }
             }
             createTables();
         } catch (SQLException | java.io.IOException e) {

@@ -1,3 +1,15 @@
+E:\AIAgent\hello-agents-java\src\main\java\com\cybertown\agent\NpcAgentManager.java
+E:\AIAgent\hello-agents-java\src\main\java\com\cybertown\agent\NpcBatchGenerator.java
+E:\AIAgent\hello-agents-java\src\main\java\com\cybertown\agent\NpcConfig.java
+E:\AIAgent\hello-agents-java\src\main\java\com\cybertown\agent\RelationshipManager.java
+E:\AIAgent\hello-agents-java\src\main\java\com\cybertown\config\AppConfig.java
+E:\AIAgent\hello-agents-java\src\main\java\com\cybertown\CyberTownApp.java
+E:\AIAgent\hello-agents-java\src\main\java\com\cybertown\model\Dialogue.java
+E:\AIAgent\hello-agents-java\src\main\java\com\cybertown\model\GameState.java
+E:\AIAgent\hello-agents-java\src\main\java\com\cybertown\model\Npc.java
+E:\AIAgent\hello-agents-java\src\main\java\com\cybertown\model\Player.java
+E:\AIAgent\hello-agents-java\src\main\java\com\cybertown\service\StateManager.java
+E:\AIAgent\hello-agents-java\src\main\java\com\cybertown\util\Logger.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\Agent.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\BfclCustomEvaluation.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\app\BfclEvaluationRunner.java
