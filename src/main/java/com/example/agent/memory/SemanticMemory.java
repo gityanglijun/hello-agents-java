@@ -4,6 +4,8 @@ import com.example.agent.embedding.EmbedderProvider;
 import com.example.agent.nlp.EntityRelationExtractor;
 import com.example.agent.store.DocumentStore;
 import com.example.agent.store.GraphStore;
+import com.example.agent.store.InMemoryGraphStore;
+import com.example.agent.store.InMemoryVectorStore;
 import com.example.agent.store.VectorStore;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -92,8 +94,8 @@ public class SemanticMemory implements BaseMemory {
         this.embedder = embedder != null ? embedder : new EmbedderProvider(256);
         this.docStore = docStore != null ? docStore : new DocumentStore(":memory:");
         this.ownDocStore = docStore == null;
-        this.vectorStore = vectorStore != null ? vectorStore : new VectorStore(this.embedder.getDimension());
-        this.graphStore = graphStore != null ? graphStore : new GraphStore();
+        this.vectorStore = vectorStore != null ? vectorStore : new InMemoryVectorStore(this.embedder.getDimension());
+        this.graphStore = graphStore != null ? graphStore : new InMemoryGraphStore();
     }
 
     // ==================== 添加 ====================

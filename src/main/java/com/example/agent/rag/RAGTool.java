@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 import com.example.agent.embedding.EmbedderProvider;
 import com.example.agent.llm.HelloAgentsLLM;
 import com.example.agent.store.DocumentStore;
+import com.example.agent.store.InMemoryVectorStore;
 import com.example.agent.store.VectorStore;
 import com.example.agent.tool.Tool;
 import com.example.agent.tool.ToolParameter;
@@ -84,7 +85,7 @@ public class RAGTool extends Tool {
         this.embedder = new EmbedderProvider(vectorDim);
         this.docStore = docStore != null ? docStore : new DocumentStore(":memory:");
         this.ownDocStore = docStore == null;
-        this.vectorStore = vectorStore != null ? vectorStore : new VectorStore(vectorDim);
+        this.vectorStore = vectorStore != null ? vectorStore : new InMemoryVectorStore(vectorDim);
         this.llm = null;
     }
 

@@ -1,6 +1,12 @@
 package com.example.agent.memory;
 
+import com.example.agent.embedding.EmbedderProvider;
 import com.example.agent.store.DocumentStore;
+import com.example.agent.store.GraphStore;
+import com.example.agent.store.InMemoryGraphStore;
+import com.example.agent.store.InMemoryVectorStore;
+import com.example.agent.store.StoreFactory;
+import com.example.agent.store.VectorStore;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -78,6 +84,51 @@ public class MemoryManager {
     /** 使用文件持久化 */
     public MemoryManager(String dbPath) {
         this(new DocumentStore(dbPath != null ? dbPath : ":memory:"));
+    }
+
+    /** 使用 StoreFactory 创建存储后端（从环境变量选择 InMemory / Qdrant / Neo4j） */
+    public MemoryManager(DocumentStore docStore, StoreFactory storeFactory) {
+        this.docStore = docStore != null ? docStore : new DocumentStore(":memory:");
+        this.ownDocStore = docStore == null;
+        StoreFactory sf = storeFactory != null ? storeFactory : new StoreFactory();
+
+        int episodicDim = 256;
+        int semanticDim = 256;
+        int textDim = 256, imageDim = 512, audioDim = 512;
+
+        this.workingMemory = new WorkingMemory();
+        this.episodicMemory = new EpisodicMemory(
+            new EmbedderProvider(episodicDim), this.docStore,
+            sf.createVectorStore(episodicDim, "episodic"));
+        this.semanticMemory = new SemanticMemory(
+            new EmbedderProvider(semanticDim), this.docStore,
+            sf.createVectorStore(semanticDim, "semantic"),
+            sf.createGraphStore());
+        this.perceptualMemory = new PerceptualMemory(
+            textDim, imageDim, audioDim, this.docStore,
+            sf.createVectorStore(textDim, "perceptual_text"),
+            sf.createVectorStore(imageDim, "perceptual_image"),
+            sf.createVectorStore(audioDim, "perceptual_audio"));
+    }
+
+    /** 直接注入所有存储实例（手动控制每个后端） */
+    public MemoryManager(DocumentStore docStore,
+                         VectorStore episodicVecStore,
+                         VectorStore semanticVecStore,
+                         GraphStore semanticGraphStore,
+                         VectorStore perceptualTextStore,
+                         VectorStore perceptualImageStore,
+                         VectorStore perceptualAudioStore) {
+        this.docStore = docStore != null ? docStore : new DocumentStore(":memory:");
+        this.ownDocStore = docStore == null;
+        this.workingMemory = new WorkingMemory();
+        this.episodicMemory = new EpisodicMemory(
+            new EmbedderProvider(256), this.docStore, episodicVecStore);
+        this.semanticMemory = new SemanticMemory(
+            new EmbedderProvider(256), this.docStore, semanticVecStore, semanticGraphStore);
+        this.perceptualMemory = new PerceptualMemory(
+            256, 512, 512, this.docStore,
+            perceptualTextStore, perceptualImageStore, perceptualAudioStore);
     }
 
     // ==================== 添加记忆 ====================

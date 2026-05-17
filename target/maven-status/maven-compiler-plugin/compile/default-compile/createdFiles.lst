@@ -4,6 +4,7 @@ com\example\agent\tool\BFCLEvaluationTool.class
 com\example\agent\deepresearch\service\ReportingService.class
 com\example\agent\tool\ToolRegistry.class
 com\example\agent\rag\RAGToolTest.class
+com\example\agent\store\Neo4jGraphStore.class
 com\example\agent\trip\model\TripModels$MealType.class
 com\example\agent\embedding\CLIPOnnxEmbedding$BpePair.class
 com\example\agent\app\InteractiveAgent.class
@@ -13,6 +14,7 @@ com\example\agent\app\CodebaseMaintainer.class
 com\example\agent\pattern\ProjectAssistantTest.class
 com\example\agent\LoadDotenvUtil.class
 com\example\agent\rag\DocumentReader.class
+com\example\agent\store\QdrantVectorStoreTest.class
 com\example\agent\memory\PerceptualMemory.class
 com\example\agent\tool\BFCLEvaluator$LlmCaller$ToolCallResult.class
 com\example\agent\tool\AsyncToolExecutorTest.class
@@ -45,7 +47,6 @@ com\example\agent\tool\NoteToolSmokeTest.class
 com\example\agent\tool\A2ATool.class
 com\example\agent\pattern\SimpleAgent.class
 com\example\agent\deepresearch\service\NoteGuidanceBuilder.class
-com\example\agent\store\GraphStore$1.class
 com\example\agent\tool\MCPTool.class
 com\example\agent\deepresearch\DeepResearchPrompts.class
 com\example\agent\tool\ToolChain.class
@@ -54,6 +55,7 @@ com\example\agent\memory\SemanticMemory$GraphHit.class
 com\example\agent\tool\MCPWrappedTool.class
 com\example\agent\rag\ContextConfig.class
 com\example\agent\tool\MCPTool$1.class
+com\example\agent\store\InMemoryVectorStore$1.class
 com\example\agent\trip\model\TripModels$WeatherResponse.class
 com\example\agent\deepresearch\model\DeepResearchModels$ResearchRequest.class
 com\example\agent\tool\BFCLEvaluator$BfclSample.class
@@ -66,6 +68,7 @@ com\example\agent\store\DocumentStore$1.class
 com\example\agent\trip\service\AmapMcpServer.class
 com\example\agent\memory\SemanticMemory$Entity.class
 com\example\agent\trip\model\TripModels$TripPlan.class
+com\example\agent\store\Neo4jGraphStoreTest.class
 com\example\agent\app\MultiAgentDocAssistant.class
 com\example\agent\pattern\ToolAwareSimpleAgent.class
 com\example\agent\memory\SemanticMemory$VectorHit.class
@@ -77,6 +80,7 @@ com\example\agent\tool\GAIAEvaluator$2.class
 com\example\agent\tool\NoteToolAdapter.class
 com\example\agent\nlp\ChineseTokenizer.class
 com\example\agent\pattern\MyPlanAndSolveAgent.class
+com\example\agent\store\StoreConfig.class
 com\example\agent\trip\model\TripModels$TripRequest.class
 com\example\agent\tool\BFCLEvaluator$1.class
 com\example\agent\trip\model\TripModels$POISearchResult.class
@@ -139,6 +143,7 @@ com\example\agent\pattern\SimpleAgent$ToolCallMatch.class
 com\example\agent\deepresearch\model\DeepResearchModels$SummaryState.class
 com\example\agent\tool\NoteTool$1.class
 com\example\agent\app\BfclEvaluationRunner.class
+com\example\agent\store\InMemoryGraphStore.class
 com\example\agent\tool\BFCLEvaluator$2.class
 com\example\agent\app\CodebaseMaintainerDemo.class
 com\example\agent\app\DataGenCompleteFlow.class
@@ -206,6 +211,7 @@ com\example\agent\client\SerpApiHttpClient.class
 com\example\agent\embedding\EmbedderProvider.class
 com\example\agent\llm\HelloAgentsLLM$ThinkWithToolsResult.class
 com\example\agent\tool\RLTrainingTool$RewardFn.class
+com\example\agent\store\InMemoryVectorStore.class
 com\cybertown\CyberTownApp$1.class
 com\example\agent\rag\MarkdownChunker$Paragraph.class
 com\example\agent\pattern\PlanAndSolveAgent$2.class
@@ -213,15 +219,17 @@ com\example\agent\tool\ANPNetwork.class
 com\example\agent\tool\TerminalTool.class
 com\example\agent\app\BfclCustomEvaluation.class
 com\cybertown\util\Logger.class
+com\example\agent\store\QdrantVectorStore.class
 com\example\agent\app\LLMJudgeDemo.class
 com\example\agent\memory\MemoryConfig.class
 com\example\agent\trip\model\TripModels$DayPlan.class
 com\example\agent\app\GaiaQuickStart$1.class
-com\example\agent\store\VectorStore$1.class
 com\example\agent\app\WeatherAssistantDemo.class
+com\example\agent\store\StoreFactory.class
 com\example\agent\trip\model\TripModels$Budget.class
 com\example\agent\pattern\PlanAndSolveAgent$1.class
 com\example\agent\memory\PerceptualMemory$ScoredItem.class
+com\example\agent\store\InMemoryGraphStore$1.class
 com\example\agent\memory\MemoryConfig$Builder.class
 com\example\agent\rag\MarkdownChunker$Chunk.class
 com\example\agent\trip\model\TripModels$Location.class

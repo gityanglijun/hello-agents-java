@@ -3,6 +3,7 @@ package com.example.agent.memory;
 import com.example.agent.embedding.CLIPOnnxEmbedding;
 import com.example.agent.embedding.EmbedderProvider;
 import com.example.agent.store.DocumentStore;
+import com.example.agent.store.InMemoryVectorStore;
 import com.example.agent.store.VectorStore;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -91,9 +92,9 @@ public class PerceptualMemory implements BaseMemory {
         this.ownDocStore = docStore == null;
 
         int actualImageDim = clip != null ? CLIP_DIM : imageDim;
-        this.vectorStores.put(MOD_TEXT, textVecStore != null ? textVecStore : new VectorStore(textDim));
-        this.vectorStores.put(MOD_IMAGE, imageVecStore != null ? imageVecStore : new VectorStore(actualImageDim));
-        this.vectorStores.put(MOD_AUDIO, audioVecStore != null ? audioVecStore : new VectorStore(audioDim));
+        this.vectorStores.put(MOD_TEXT, textVecStore != null ? textVecStore : new InMemoryVectorStore(textDim));
+        this.vectorStores.put(MOD_IMAGE, imageVecStore != null ? imageVecStore : new InMemoryVectorStore(actualImageDim));
+        this.vectorStores.put(MOD_AUDIO, audioVecStore != null ? audioVecStore : new InMemoryVectorStore(audioDim));
 
         System.out.println("[PerceptualMemory] 初始化完成"
                 + " | TEXT=" + textEmbedder.getActiveBackend() + "(" + textEmbedder.getDimension() + "维)"
@@ -308,7 +309,7 @@ public class PerceptualMemory implements BaseMemory {
     public Map<String, Integer> modalityCounts() {
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (String mod : ALL_MODALITIES) {
-            int c = vectorStores.getOrDefault(mod, new VectorStore(0)).size();
+            int c = vectorStores.getOrDefault(mod, new InMemoryVectorStore(0)).size();
             if (c > 0) counts.put(mod, c);
         }
         return counts;

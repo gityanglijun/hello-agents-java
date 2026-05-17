@@ -2,6 +2,7 @@ package com.example.agent.memory;
 
 import com.example.agent.embedding.EmbedderProvider;
 import com.example.agent.store.DocumentStore;
+import com.example.agent.store.InMemoryVectorStore;
 import com.example.agent.store.VectorStore;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -63,7 +64,7 @@ public class EpisodicMemory implements BaseMemory {
         this.embedder = embedder != null ? embedder : new EmbedderProvider(DEFAULT_VECTOR_DIM);
         this.docStore = docStore != null ? docStore : new DocumentStore(":memory:");
         this.ownDocStore = docStore == null;
-        this.vectorStore = vectorStore != null ? vectorStore : new VectorStore(DEFAULT_VECTOR_DIM);
+        this.vectorStore = vectorStore != null ? vectorStore : new InMemoryVectorStore(DEFAULT_VECTOR_DIM);
     }
 
     // ==================== 添加 ====================
