@@ -120,6 +120,60 @@ public class SerpApiHttpClient {
         return result;
     }
 
+    /**
+     * 图片搜索 — 使用 SerpApi Google Images (engine=google_images)。
+     * @return [{original, thumbnail, title, source, link}]
+     */
+    public static List<Map<String, String>> searchImages(String query, String apiKey, int maxResults) {
+        List<Map<String, String>> images = new ArrayList<>();
+
+        try {
+            String url = buildUrl(Map.of(
+                    "engine", "google_images",
+                    "q", query,
+                    "api_key", apiKey,
+                    "gl", "cn",
+                    "hl", "zh-cn",
+                    "num", String.valueOf(maxResults)
+            ));
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(30))
+                    .header("Accept", "application/json")
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() != 200) {
+                return images;
+            }
+
+            JsonObject json = JsonParser.parseString(response.body()).getAsJsonObject();
+
+            if (json.has("images_results") && json.get("images_results").isJsonArray()) {
+                JsonArray arr = json.get("images_results").getAsJsonArray();
+                for (int i = 0; i < Math.min(maxResults, arr.size()); i++) {
+                    JsonObject item = arr.get(i).getAsJsonObject();
+                    Map<String, String> entry = new LinkedHashMap<>();
+                    entry.put("original", jsonStr(item, "original", ""));
+                    entry.put("thumbnail", jsonStr(item, "thumbnail", ""));
+                    entry.put("title", jsonStr(item, "title", ""));
+                    entry.put("source", jsonStr(item, "source", ""));
+                    entry.put("link", jsonStr(item, "link", ""));
+                    images.add(entry);
+                }
+            }
+        } catch (IOException | InterruptedException e) {
+            // 返回空列表
+        } catch (Exception e) {
+            // 返回空列表
+        }
+
+        return images;
+    }
+
     private static String formatText(Map<String, Object> result) {
         StringBuilder sb = new StringBuilder();
 

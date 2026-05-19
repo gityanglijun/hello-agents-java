@@ -17,6 +17,7 @@ com\example\agent\rag\DocumentReader.class
 com\example\agent\store\QdrantVectorStoreTest.class
 com\example\agent\memory\PerceptualMemory.class
 com\example\agent\tool\BFCLEvaluator$LlmCaller$ToolCallResult.class
+com\example\agent\game\GameResearchDemo.class
 com\example\agent\tool\AsyncToolExecutorTest.class
 com\example\agent\tool\LLMJudge$JudgeResult.class
 com\example\agent\memory\SemanticMemory$Relation.class
@@ -32,6 +33,7 @@ com\example\agent\tool\BFCLEvaluator$EvalResult.class
 com\example\agent\Config.class
 com\example\agent\memory\BaseMemory.class
 com\example\agent\tool\BFCLEvaluator.class
+com\example\agent\game\GameImageSearchTool.class
 com\example\agent\pattern\MyReflectionAgent.class
 com\example\agent\trip\service\MultiAgentTripPlanner.class
 com\cybertown\agent\NpcBatchGenerator.class
@@ -207,6 +209,7 @@ com\example\agent\pattern\PlanAndSolveAgentLegacy.class
 com\example\agent\embedding\BGEOnnxEmbedding.class
 com\example\agent\app\WinRateDemo.class
 com\example\agent\Message.class
+com\example\agent\game\GameResearchDemo$SseProxyTool.class
 com\example\agent\client\SerpApiHttpClient.class
 com\example\agent\embedding\EmbedderProvider.class
 com\example\agent\llm\HelloAgentsLLM$ThinkWithToolsResult.class
