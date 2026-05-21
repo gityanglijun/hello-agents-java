@@ -10,6 +10,10 @@ import com.example.agent.tool.Tool;
 import com.example.agent.tool.ToolParameter;
 import com.example.agent.tool.ToolRegistry;
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.client.transport.HttpClientSseClientTransport;
@@ -21,17 +25,20 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
+import java.util.stream.Collectors;
 
 /**
- * 游戏研究智能体 — 支持三种模式:
+ * 游戏研究智能体 — 支持四种模式:
  *
  *   demo [游戏名]    本地报告模式（不连 MCP）
- *   mcp [游戏名]     MCP 连接 + 数据回传模式
+ *   mcp [游戏名]     MCP 连接 + 手动逐款研究
+ *   batch            MCP 连接 + 全量自动研究（遍历所有待处理游戏）
  *   (无参数)         交互模式，自动检测 MCP 可用性
  *
  * 运行:
  *   mvn exec:java -Dexec.mainClass=com.example.agent.game.GameResearchDemo -Dexec.args="demo 'Elden Ring'"
  *   mvn exec:java -Dexec.mainClass=com.example.agent.game.GameResearchDemo -Dexec.args="mcp"
+ *   mvn exec:java -Dexec.mainClass=com.example.agent.game.GameResearchDemo -Dexec.args="batch"
  */
 public class GameResearchDemo {
 
@@ -76,6 +83,7 @@ public class GameResearchDemo {
         switch (mode) {
             case "demo" -> runDemo(agent, gameName);
             case "mcp" -> runMcpMode(agent, gameName);
+            case "batch" -> runBatchMode(agent, mcpConnected);
             default -> runInteractive(agent, mcpConnected);
         }
     }
@@ -338,6 +346,90 @@ public class GameResearchDemo {
             }
         }
     }
+
+    /** 批量模式 — 自动遍历 MCP 返回的所有待处理游戏，逐个研究并回传 */
+    private static void runBatchMode(FunctionCallAgent agent, boolean mcpConnected) {
+        if (!mcpConnected || sseClient == null) {
+            System.out.println("批量模式需要 MCP 连接！请先配置 GAME_MCP_URL");
+            return;
+        }
+
+        // 1. 从 MCP 获取游戏列表
+        System.out.println("\n=== 批量模式：获取待处理游戏列表 ===\n");
+        List<GameInfo> gameList = fetchGameListFromMcp();
+        if (gameList.isEmpty()) {
+            System.out.println("没有找到待处理的游戏，所有游戏数据已完整。");
+            return;
+        }
+
+        int total = gameList.size();
+        System.out.println("共 " + total + " 款游戏待处理\n");
+
+        // 2. 逐个研究
+        int done = 0;
+        int success = 0;
+        for (GameInfo game : gameList) {
+            done++;
+            long id = game.id;
+            String title = game.title;
+
+            System.out.println("=".repeat(50));
+            System.out.println("[" + done + "/" + total + "] 正在研究: [ID=" + id + "] " + title);
+            System.out.println("=".repeat(50));
+
+            try {
+                String prompt = String.format(
+                    "请用 get_game_detail 获取游戏 ID=%d 的详情，" +
+                    "然后用 search 和 search_game_images 全面研究该游戏（基本信息、攻略、截图），" +
+                    "最后用 save_game_info 保存元数据、save_game_guide 保存攻略（多种类型各一条）、" +
+                    "save_game_screenshots 保存截图。", id);
+
+                agent.run(prompt);
+                success++;
+            } catch (Exception e) {
+                System.out.println("  [ERROR] " + e.getMessage());
+            }
+
+            // 间隔，避免 API 限流
+            if (done < total) {
+                System.out.println("\n  等待 3 秒...\n");
+                try { Thread.sleep(3000); } catch (InterruptedException ignored) {}
+            }
+        }
+
+        System.out.println("\n============================================================");
+        System.out.println("批量处理完成！共 " + total + " 款，成功 " + success + " 款");
+        System.out.println("============================================================");
+    }
+
+    /** 从 MCP 获取待处理游戏列表 */
+    private static List<GameInfo> fetchGameListFromMcp() {
+        List<GameInfo> result = new ArrayList<>();
+        try {
+            McpSchema.CallToolResult toolResult = sseClient.callTool(
+                    new McpSchema.CallToolRequest("list_games_needing_enrichment",
+                            Map.of("limit", 200)));
+
+            String json = toolResult.content().stream()
+                    .filter(c -> c instanceof McpSchema.TextContent)
+                    .map(c -> ((McpSchema.TextContent) c).text())
+                    .collect(Collectors.joining());
+
+            JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+            JsonArray games = root.getAsJsonArray("games");
+            for (JsonElement e : games) {
+                JsonObject g = e.getAsJsonObject();
+                long id = g.get("id").getAsLong();
+                String title = g.get("title").getAsString();
+                result.add(new GameInfo(id, title));
+            }
+        } catch (Exception e) {
+            System.out.println("获取游戏列表失败: " + e.getMessage());
+        }
+        return result;
+    }
+
+    private record GameInfo(long id, String title) {}
 
     /** 交互模式 — 手动输入游戏名，支持 MCP 回传 */
     private static void runInteractive(FunctionCallAgent agent, boolean mcpConnected) {

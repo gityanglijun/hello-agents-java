@@ -263,3 +263,4 @@ com\example\agent\llm\HelloAgentsLLM.class
 com\example\agent\memory\EpisodicMemory$Episode.class
 com\example\agent\pattern\ContextAwareAgent.class
 com\example\agent\pattern\Planner$1.class
+com\example\agent\game\GameResearchDemo$GameInfo.class
