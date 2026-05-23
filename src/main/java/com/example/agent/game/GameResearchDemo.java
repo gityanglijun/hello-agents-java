@@ -77,7 +77,7 @@ public class GameResearchDemo {
         // --- 4. 创建 Agent ---
         String systemPrompt = mcpConnected ? buildMcpSystemPrompt() : buildLocalSystemPrompt();
         FunctionCallAgent agent = new FunctionCallAgent(
-                "GameResearchAgent", llm, systemPrompt, registry);
+                "GameResearchAgent", llm, systemPrompt, null, registry, true, 8);
 
         // --- 5. 运行 ---
         switch (mode) {
@@ -120,7 +120,7 @@ public class GameResearchDemo {
             1. 使用 search 工具搜索游戏基本信息：类型(genre)、开发商(developer)、发行商(publisher)、
                发布日期(releaseDate)、支持平台(platforms)、游戏介绍(description)
             2. 使用 search 工具搜索游戏攻略、评测、新手指南
-            3. 使用 search_game_images 工具搜索游戏截图
+            3. 使用 search_game_images 工具搜索游戏截图（自动多策略 + SearxNG兜底）
 
             ## 回传阶段
             4. 使用 save_game_info 将收集到的元数据保存到后端（需要 gameId + 所有字段）

@@ -49,6 +49,7 @@ com\example\agent\tool\NoteToolSmokeTest.class
 com\example\agent\tool\A2ATool.class
 com\example\agent\pattern\SimpleAgent.class
 com\example\agent\deepresearch\service\NoteGuidanceBuilder.class
+com\example\agent\game\SearxNGImageClient.class
 com\example\agent\tool\MCPTool.class
 com\example\agent\deepresearch\DeepResearchPrompts.class
 com\example\agent\tool\ToolChain.class

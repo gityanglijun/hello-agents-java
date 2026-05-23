@@ -41,6 +41,7 @@ public class SearchTool extends Tool {
 
     private String tavilyApiKey;
     private String serpapiApiKey;
+    private String searxngUrl;
 
     public SearchTool(String backendStr) {
         super("search", "智能网页搜索引擎，支持 Tavily、SerpApi、DuckDuckGo 等后端，可返回结构化或文本化的搜索结果。");
@@ -78,6 +79,24 @@ public class SearchTool extends Tool {
         // DuckDuckGo 免费无需 API key，始终可用
         availableBackends.add("duckduckgo");
         System.out.println("✅ DuckDuckGo搜索源已启用（免费）");
+
+        // SearxNG — 自建免费聚合搜索，无配额限制
+        String searxng = env.getOrDefault("SEARXNG_URL",
+                System.getenv("SEARXNG_URL") != null ? System.getenv("SEARXNG_URL") : "");
+        if (searxng.isBlank()) {
+            String mcpUrl = env.getOrDefault("GAME_MCP_URL",
+                    System.getenv("GAME_MCP_URL") != null ? System.getenv("GAME_MCP_URL") : "");
+            if (!mcpUrl.isBlank()) {
+                searxng = mcpUrl.replaceFirst(":\\d+$", ":8088");
+            }
+        }
+        this.searxngUrl = searxng;
+        if (!searxngUrl.isBlank()) {
+            availableBackends.add("searxng");
+            System.out.println("✅ SearxNG搜索源已启用（免费自建）: " + searxngUrl);
+        } else {
+            System.out.println("⚠️ SearxNG 未配置，文本搜索将无此降级");
+        }
 
         if ("hybrid".equals(defaultBackend)) {
             if (!availableBackends.isEmpty()) {
@@ -159,6 +178,8 @@ public class SearchTool extends Tool {
                 return searchSerpApi(query, fetchFullPage, maxResults, maxTokens);
             case "duckduckgo":
                 return searchDuckDuckGo(query, fetchFullPage, maxResults, maxTokens);
+            case "searxng":
+                return searchSearxng(query, fetchFullPage, maxResults, maxTokens);
             case "advanced":
                 return searchAdvanced(query, fetchFullPage, maxResults, maxTokens, loopCount);
             default:
@@ -303,6 +324,75 @@ public class SearchTool extends Tool {
         return structuredPayload(results, "duckduckgo", null, notices);
     }
 
+    // ==================== SearxNG (免费聚合搜索) ====================
+
+    private Map<String, Object> searchSearxng(String query, boolean fetchFullPage,
+                                              int maxResults, int maxTokens) {
+        List<Map<String, Object>> results = new ArrayList<>();
+        List<String> notices = new ArrayList<>();
+
+        try {
+            String encoded = URLEncoder.encode(query, StandardCharsets.UTF_8);
+            String url = searxngUrl + "/search?q=" + encoded
+                    + "&format=json&safesearch=0&language=zh-CN";
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(15))
+                    .header("Accept", "application/json")
+                    .header("User-Agent", "GameResearchAgent/1.0")
+                    .GET().build();
+
+            HttpResponse<String> response = HTTP.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() != 200) {
+                notices.add("SearxNG HTTP " + response.statusCode());
+                return structuredPayload(results, "searxng", null, notices);
+            }
+
+            JsonObject root = JsonParser.parseString(response.body()).getAsJsonObject();
+            JsonArray jsonResults = root.getAsJsonArray("results");
+            if (jsonResults == null || jsonResults.isEmpty()) {
+                notices.add("SearxNG 未返回有效结果");
+                return structuredPayload(results, "searxng", null, notices);
+            }
+
+            int count = 0;
+            for (int i = 0; i < jsonResults.size() && count < maxResults; i++) {
+                JsonObject item = jsonResults.get(i).getAsJsonObject();
+                String title = jsonStr(item, "title");
+                String itemUrl = jsonStr(item, "url");
+                String content = jsonStr(item, "content");
+
+                if (itemUrl.isBlank() && title.isBlank()) continue;
+
+                String rawContent = content;
+                if (fetchFullPage && !rawContent.isBlank()) {
+                    rawContent = limitText(rawContent, maxTokens);
+                }
+
+                results.add(normalizedResult(
+                        title.isBlank() ? itemUrl : title,
+                        itemUrl,
+                        content,
+                        rawContent));
+                count++;
+            }
+
+        } catch (Exception e) {
+            notices.add("SearxNG 搜索失败: " + e.getMessage());
+        }
+
+        return structuredPayload(results, "searxng", null, notices);
+    }
+
+    private static String jsonStr(JsonObject obj, String key) {
+        if (obj.has(key) && !obj.get(key).isJsonNull()) {
+            return obj.get(key).getAsString();
+        }
+        return "";
+    }
+
     // ==================== Advanced (混合优先) ====================
 
     private Map<String, Object> searchAdvanced(String query, boolean fetchFullPage,
@@ -342,7 +432,7 @@ public class SearchTool extends Tool {
             }
         }
 
-        // 最后 DuckDuckGo
+        // 再次 DuckDuckGo
         try {
             Map<String, Object> ddgPayload = searchDuckDuckGo(query, fetchFullPage, maxResults, maxTokens);
             @SuppressWarnings("unchecked")
@@ -353,6 +443,21 @@ public class SearchTool extends Tool {
             return ddgPayload;
         } catch (Exception e) {
             notices.add("⚠️ DuckDuckGo 搜索失败：" + e.getMessage());
+        }
+
+        // 最后 SearxNG（自建聚合搜索，Google/Bing/Baidu 多引擎，无配额限制）
+        if (!searxngUrl.isBlank()) {
+            try {
+                Map<String, Object> searxngPayload = searchSearxng(query, fetchFullPage, maxResults, maxTokens);
+                @SuppressWarnings("unchecked")
+                List<String> existingNotices = (List<String>) searxngPayload.getOrDefault("notices", List.of());
+                List<String> allNotices = new ArrayList<>(notices);
+                allNotices.addAll(existingNotices);
+                searxngPayload.put("notices", allNotices);
+                return searxngPayload;
+            } catch (Exception e) {
+                notices.add("⚠️ SearxNG 搜索失败：" + e.getMessage());
+            }
         }
 
         return structuredPayload(List.of(), "advanced", null, notices);

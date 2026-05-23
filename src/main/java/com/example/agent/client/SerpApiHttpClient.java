@@ -122,9 +122,25 @@ public class SerpApiHttpClient {
 
     /**
      * 图片搜索 — 使用 SerpApi Google Images (engine=google_images)。
+     * 自动根据查询语言切换 Google 区域：中文用 gl=cn，其他用 gl=us。
      * @return [{original, thumbnail, title, source, link}]
      */
     public static List<Map<String, String>> searchImages(String query, String apiKey, int maxResults) {
+        // 自动检测语言：含中文用 cn，否则用 us（英文/日文等用美国节点结果更多）
+        boolean isChinese = query.matches(".*[\\u4e00-\\u9fff]+.*");
+        String gl = isChinese ? "cn" : "us";
+        String hl = isChinese ? "zh-cn" : "en";
+
+        return searchImagesInternal(query, apiKey, maxResults, gl, hl, true);
+    }
+
+    /**
+     * 内部图片搜索，尝试指定区域，失败时自动降级重试。
+     */
+    private static List<Map<String, String>> searchImagesInternal(
+            String query, String apiKey, int maxResults,
+            String gl, String hl, boolean allowRetry) {
+
         List<Map<String, String>> images = new ArrayList<>();
 
         try {
@@ -132,9 +148,10 @@ public class SerpApiHttpClient {
                     "engine", "google_images",
                     "q", query,
                     "api_key", apiKey,
-                    "gl", "cn",
-                    "hl", "zh-cn",
-                    "num", String.valueOf(maxResults)
+                    "gl", gl,
+                    "hl", hl,
+                    "num", String.valueOf(maxResults),
+                    "safe", "off"
             ));
 
             HttpRequest request = HttpRequest.newBuilder()
@@ -147,13 +164,39 @@ public class SerpApiHttpClient {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
+                System.err.println("[SerpApi Images] HTTP " + response.statusCode()
+                        + " for query='" + query + "' gl=" + gl);
+                // 降级：换个区域重试一次
+                if (allowRetry && !"us".equals(gl)) {
+                    return searchImagesInternal(query, apiKey, maxResults, "us", "en", false);
+                }
                 return images;
             }
 
-            JsonObject json = JsonParser.parseString(response.body()).getAsJsonObject();
+            String body = response.body();
+            JsonObject json = JsonParser.parseString(body).getAsJsonObject();
+
+            // SerpApi 可能返回错误信息
+            if (json.has("error")) {
+                System.err.println("[SerpApi Images] API error for query='" + query
+                        + "': " + json.get("error"));
+                return images;
+            }
+
+            // 检查搜索状态
+            if (json.has("search_metadata")) {
+                JsonObject meta = json.get("search_metadata").getAsJsonObject();
+                String status = jsonStr(meta, "status", "");
+                if (!"Success".equals(status)) {
+                    System.err.println("[SerpApi Images] search status=" + status
+                            + " for query='" + query + "'");
+                }
+            }
 
             if (json.has("images_results") && json.get("images_results").isJsonArray()) {
                 JsonArray arr = json.get("images_results").getAsJsonArray();
+                System.err.println("[SerpApi Images] query='" + query + "' gl=" + gl
+                        + " → " + arr.size() + " results");
                 for (int i = 0; i < Math.min(maxResults, arr.size()); i++) {
                     JsonObject item = arr.get(i).getAsJsonObject();
                     Map<String, String> entry = new LinkedHashMap<>();
@@ -164,11 +207,14 @@ public class SerpApiHttpClient {
                     entry.put("link", jsonStr(item, "link", ""));
                     images.add(entry);
                 }
+            } else {
+                System.err.println("[SerpApi Images] no 'images_results' in response for query='"
+                        + query + "' gl=" + gl + ". Keys: " + json.keySet());
             }
         } catch (IOException | InterruptedException e) {
-            // 返回空列表
+            System.err.println("[SerpApi Images] network error for query='" + query + "': " + e.getMessage());
         } catch (Exception e) {
-            // 返回空列表
+            System.err.println("[SerpApi Images] unexpected error for query='" + query + "': " + e.getMessage());
         }
 
         return images;

@@ -52,6 +52,7 @@ E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\embedding\EmbedderP
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\embedding\LLMEmbeddingClient.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\game\GameImageSearchTool.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\game\GameResearchDemo.java
+E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\game\SearxNGImageClient.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\llm\HelloAgentsLLM.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\llm\MyLLM.java
 E:\AIAgent\hello-agents-java\src\main\java\com\example\agent\LoadDotenvUtil.java
