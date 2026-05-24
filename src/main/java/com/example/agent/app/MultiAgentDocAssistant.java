@@ -38,7 +38,7 @@ public class MultiAgentDocAssistant {
         // --- 加载环境变量 ---
         Map<String, String> dotEnv = LoadDotenvUtil.loadEnvFile();
         String githubToken = dotEnv.getOrDefault("GITHUB_PERSONAL_ACCESS_TOKEN",
-                System.getenv().getOrDefault("GITHUB_PERSONAL_ACCESS_TOKEN", "your-github-pat"));
+                System.getenv().getOrDefault("GITHUB_PERSONAL_ACCESS_TOKEN", ""));
 
         // Clash 代理配置（MCP 子进程需要显式传入，不会自动走系统代理）
         Map<String, String> proxyEnv = new java.util.LinkedHashMap<>();
