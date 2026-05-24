@@ -1,0 +1,23 @@
+services:
+  game-agent:
+    build: .
+    image: game-research-agent:latest
+    container_name: game-research-agent
+    restart: unless-stopped
+    # .env 文件挂载（在宿主机准备好 prod.env）
+    env_file:
+      - ./prod.env
+    # 或者直接声明环境变量（二选一）
+    # environment:
+    #   LLM_API_KEY: sk-xxx
+    #   LLM_BASE_URL: https://api.deepseek.com/v1
+    #   LLM_MODEL_ID: deepseek-v4-flash
+    #   SERPAPI_API_KEY: xxx
+    #   TAVILY_API_KEY: tvly-dev-xxx
+    #   GAME_MCP_URL: http://your-server:8080
+    #   SEARXNG_URL: http://your-server:8088
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"

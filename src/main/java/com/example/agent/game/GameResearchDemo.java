@@ -83,7 +83,16 @@ public class GameResearchDemo {
         switch (mode) {
             case "demo" -> runDemo(agent, gameName);
             case "mcp" -> runMcpMode(agent, gameName);
-            case "batch" -> runBatchMode(agent, mcpConnected);
+            case "batch" -> runBatchMode(agent, mcpConnected, Integer.MAX_VALUE);
+            case "top" -> {
+                int limit = 10;
+                if (gameName != null) {
+                    try { limit = Integer.parseInt(gameName); } catch (NumberFormatException ignored) {
+                        System.out.println("无法解析参数 '" + gameName + "'，使用默认值 10");
+                    }
+                }
+                runBatchMode(agent, mcpConnected, limit);
+            }
             default -> runInteractive(agent, mcpConnected);
         }
     }
@@ -347,8 +356,9 @@ public class GameResearchDemo {
         }
     }
 
-    /** 批量模式 — 自动遍历 MCP 返回的所有待处理游戏，逐个研究并回传 */
-    private static void runBatchMode(FunctionCallAgent agent, boolean mcpConnected) {
+    /** 批量模式 — 自动遍历 MCP 返回的所有待处理游戏，逐个研究并回传。
+     *  @param maxGames 最多处理几个游戏（top 模式截取前 N 个，batch 模式传 Integer.MAX_VALUE） */
+    private static void runBatchMode(FunctionCallAgent agent, boolean mcpConnected, int maxGames) {
         if (!mcpConnected || sseClient == null) {
             System.out.println("批量模式需要 MCP 连接！请先配置 GAME_MCP_URL");
             return;
@@ -364,6 +374,13 @@ public class GameResearchDemo {
 
         int total = gameList.size();
         System.out.println("共 " + total + " 款游戏待处理\n");
+
+        // 截取前 maxGames 个（已按缺失程度降序排列）
+        if (gameList.size() > maxGames) {
+            gameList = gameList.subList(0, maxGames);
+            total = gameList.size();
+            System.out.println("限制处理前 " + maxGames + " 款\n");
+        }
 
         // 2. 逐个研究
         int done = 0;
