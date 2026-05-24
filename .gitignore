@@ -6,3 +6,5 @@
 /evaluation*
 /result/*
 /notes/*
+/src/main/java/com/.env
+/.env.example
